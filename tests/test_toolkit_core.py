@@ -852,6 +852,22 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("缺少表达节奏、问句占比、多行消息占比或表情/符号倾向时会给出 warning", readme)
         self.assertIn("风格画像缺少表达节奏、问句占比、多行消息占比或表情/符号倾向时必须 warning", prd)
 
+    def test_beginner_docs_include_weflow_case_tutorial_and_screenshots(self) -> None:
+        readme = Path("README.md").read_text(encoding="utf-8")
+        getting_started = Path("docs/GETTING_STARTED.md").read_text(encoding="utf-8")
+        weflow_export = Path("docs/WEFLOW_EXPORT.md").read_text(encoding="utf-8")
+        case_tutorial = Path("docs/CASE_TUTORIAL.md").read_text(encoding="utf-8")
+
+        self.assertIn("https://github.com/hicccc77/WeFlow", readme)
+        self.assertIn("https://github.com/hicccc77/WeFlow", weflow_export)
+        self.assertIn("这个工具做什么", getting_started)
+        self.assertIn("案例目标", case_tutorial)
+        self.assertIn("wechat-skill-distill inspect", case_tutorial)
+        self.assertIn("chat-ui", case_tutorial)
+        self.assertIn("docs/assets/chat-ui-overview.png", readme)
+        self.assertTrue(Path("docs/assets/chat-ui-overview.png").is_file())
+        self.assertTrue(Path("docs/assets/chat-ui-mobile.png").is_file())
+
     def test_docs_keep_memory_backend_responsible_for_ranking(self) -> None:
         readme = Path("README.md").read_text(encoding="utf-8")
         prd = Path("PRD.md").read_text(encoding="utf-8")

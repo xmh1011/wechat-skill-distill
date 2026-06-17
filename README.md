@@ -1,12 +1,58 @@
 # wechat-skill-distill
 
-Distill WeFlow-exported WeChat private chats into:
+Turn WeFlow-exported WeChat private chats into reusable chat skills, memory packages, and a local companion chat UI.
+
+## What This Repository Is
+
+`wechat-skill-distill` is a local-first toolkit for people who already have a WeFlow JSON export and want to reuse that chat history safely:
 
 - per-user style-only skills
-- memory backend imports
-- memory-aware chat skills
+- memory backend imports for JSONL, Hindsight, Mem0, or generic HTTP
+- memory-aware chat skills for agent conversations
+- a browser chat UI for trying the generated companion locally
+
+It does not export WeChat data by itself. Use [WeFlow](https://github.com/hicccc77/WeFlow) to export a private chat as JSON, then use this project to distill skills and memory.
 
 The toolkit is backend-neutral. Hindsight, Mem0, JSONL, and generic HTTP are treated as memory adapters.
+
+![Chat UI overview](docs/assets/chat-ui-overview.png)
+
+## Start Here
+
+New users should follow these docs in order:
+
+1. [WeFlow export guide](docs/WEFLOW_EXPORT.md): export a WeChat private chat as JSON.
+2. [Getting started](docs/GETTING_STARTED.md): install, configure participants, generate skills, start the chat UI.
+3. [Case tutorial](docs/CASE_TUTORIAL.md): run the complete demo from `examples/chat.json`.
+
+If you only want the shortest local demo:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -e .
+cp .env.example .env
+cp config.example.json config.local.json
+
+wechat-skill-distill inspect --input examples/chat.json --config config.example.json
+wechat-skill-distill extract-skills --input examples/chat.json --out-dir /tmp/wsd-demo/generated-skills --config config.example.json
+wechat-skill-distill generate-chat-skills --input examples/chat.json --out-dir /tmp/wsd-demo/generated-chat-skills --memory-backend jsonl --config config.example.json
+wechat-skill-distill import --backend jsonl --input examples/chat.json --output /tmp/wsd-demo/memory.jsonl --dry-run --config config.example.json
+```
+
+To try the web UI, configure a model in `.env`, then run:
+
+```bash
+wechat-skill-distill chat-ui \
+  --host 127.0.0.1 \
+  --port 8765 \
+  --env-file .env \
+  --skill /tmp/wsd-demo/generated-chat-skills/Participant\ A.chat-memory.skill
+```
+
+Mobile/narrow-screen layout:
+
+![Chat UI mobile](docs/assets/chat-ui-mobile.png)
 
 ## What It Does
 
@@ -15,6 +61,14 @@ The toolkit is backend-neutral. Hindsight, Mem0, JSONL, and generic HTTP are tre
 3. Import chat records into a memory backend.
 4. Generate chat skills that know how to recall memory.
 5. Keep secrets out of generated files and git.
+
+## Typical Use Cases
+
+- Distill your own or a friend's WeChat style into a reviewable `.skill` file.
+- Build a memory-aware companion persona from a WeFlow private-chat export.
+- Import normalized chat memories into JSONL first, then Hindsight, Mem0, or an internal memory service.
+- Test a generated skill in a local browser UI without exposing API keys, raw skill text, user IDs, or memory backend details to the browser.
+- Evaluate whether generated skills are too thin, missing style signals, or mixing participants.
 
 ## File Types
 
@@ -64,6 +118,8 @@ wechat-skill-distill weflow-guide
 wechat-skill-distill inspect --input examples/chat.json --config config.local.json
 wechat-skill-distill doctor --input examples/chat.json --config config.local.json
 ```
+
+Full export walkthrough: [docs/WEFLOW_EXPORT.md](docs/WEFLOW_EXPORT.md).
 
 `inspect` shows raw/importable/skipped message counts, date range, participants, message type distribution, and skip reasons. Use `--json` for automation or `--output reports/inspect.json` to save the report.
 
@@ -299,4 +355,7 @@ wechat-skill-distill evaluate-skills --skills generated-skills generated-chat-sk
 ## Product Notes
 
 - [PRD.md](PRD.md) defines the product scope, scenarios, CLI contract, and roadmap.
+- [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) is the beginner path.
+- [docs/CASE_TUTORIAL.md](docs/CASE_TUTORIAL.md) is a complete worked example.
+- [docs/WEFLOW_EXPORT.md](docs/WEFLOW_EXPORT.md) explains how to get JSON from WeFlow.
 - [docs/research/open-source-review.md](docs/research/open-source-review.md) records the open-source projects reviewed while shaping this product.

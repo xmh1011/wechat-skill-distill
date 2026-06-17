@@ -3,7 +3,6 @@ from __future__ import annotations
 from functools import partial
 import json
 import os
-import re
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
@@ -12,6 +11,7 @@ from urllib.parse import urlparse
 
 from .memory_recall import MemoryRecallError, memory_runtime_status, recall_for_chat
 from .model_client import ModelCallError, ModelConfigError, generate_chat_reply, load_env_file, runtime_status
+from .skill_meta import parse_skill_meta
 
 
 def web_root() -> Path:
@@ -35,57 +35,19 @@ def load_skill_assets(skill_paths: list[Path] | None = None) -> list[dict[str, s
     return assets
 
 
-def _frontmatter_value(text: str, key: str) -> str:
-    match = re.search(rf"^{key}:\s*(.+?)\s*$", text, re.MULTILINE)
-    if not match:
-        return ""
-    raw = match.group(1).strip()
-    if raw.startswith(('"', "'")):
-        try:
-            return str(json.loads(raw))
-        except json.JSONDecodeError:
-            return raw.strip("\"'")
-    return raw
-
-
-def _skill_title_name(text: str, file_name: str) -> str:
-    match = re.search(r"^#\s+(.+?)\s+(?:Chat\s+)?Skill\s*$", text, re.MULTILINE)
-    if match:
-        return match.group(1).strip()
-    return file_name.replace(".chat-memory.skill", "").replace(".skill", "")
-
-
-def _skill_user_id(text: str) -> str:
-    frontmatter_user_id = _frontmatter_value(text, "user_id")
-    if frontmatter_user_id:
-        return frontmatter_user_id
-    match = re.search(r"userID=([^\s，。`]+)", text)
-    return match.group(1) if match else "-"
-
-
-def _skill_phrases(text: str) -> list[str]:
-    match = re.search(r"常见表达：([^\n]+)", text)
-    if not match:
-        return []
-    line = re.sub(r"[。.;；]\s*$", "", match.group(1))
-    return [item.strip() for item in re.split(r"[、,，]", line) if item.strip()][:16]
-
-
-def _skill_sample_count(text: str) -> int:
-    return len(re.findall(r"```text\n[\s\S]*?\n```", text))
-
-
 def _skill_summary(asset: Mapping[str, str]) -> dict[str, Any]:
     text = str(asset.get("text") or "")
     file_name = str(asset.get("file_name") or "skill")
+    fallback_name = file_name.replace(".chat-memory.skill", "").replace(".skill", "")
+    meta = parse_skill_meta(text, fallback_name=fallback_name)
     return {
         "id": str(asset.get("id") or ""),
         "file_name": file_name,
-        "name": _frontmatter_value(text, "display_name") or _skill_title_name(text, file_name),
-        "userId": _skill_user_id(text),
-        "memoryAware": "## 记忆检索" in text,
-        "phrases": _skill_phrases(text),
-        "sampleCount": _skill_sample_count(text),
+        "name": meta.name,
+        "userId": meta.user_id or "-",
+        "memoryAware": meta.memory_aware,
+        "phrases": meta.phrases,
+        "sampleCount": meta.sample_count,
     }
 
 

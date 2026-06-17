@@ -303,6 +303,26 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertNotIn("raw", json.dumps(public, ensure_ascii=False))
         self.assertNotIn("这是不应发送到浏览器的完整样本", json.dumps(public, ensure_ascii=False))
 
+    def test_skill_metadata_parser_is_consistent_across_public_api_and_evaluator(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "legacy-title.chat-memory.skill"
+            path.write_text(
+                '---\nname: chat-user-team-a-01\nuser_id: "team/a 01"\ndisplay_name: "A \\"quoted\\": Persona"\n---\n'
+                "# Legacy Title Chat Skill\n\n"
+                "## 目标\n\nx\n\n## 使用时机\n\nx\n\n## 记忆检索\n\nx\n\n## 说话风格画像\n\n- 常见表达：可以、哈哈。\n\n"
+                "## 场景模板\n\nx\n\n## 真实样本\n\n```text\n可以\n```\n\n## 生成规则\n\nx\n\n## 硬边界\n\nx\n\n## 自检\n\nx\n",
+                encoding="utf-8",
+            )
+            assets = load_skill_assets([path])
+
+            public = public_skill_assets(assets)
+            report = evaluate_skills([path])
+
+        self.assertEqual(public[0]["name"], 'A "quoted": Persona')
+        self.assertEqual(report["skills"][0]["name"], 'A "quoted": Persona')
+        self.assertEqual(public[0]["userId"], "team/a 01")
+        self.assertEqual(report["skills"][0]["user_id"], "team/a 01")
+
     def test_chat_payload_resolves_preloaded_skill_server_side(self) -> None:
         assets = [
             {
@@ -590,6 +610,14 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("聊天请求只提交 skill_id", readme)
         self.assertIn("完整 skill 文本只保存在本地服务端", prd)
         self.assertIn("浏览器不得接收或回传 raw skill 文本", prd)
+
+    def test_docs_require_shared_skill_metadata_parser(self) -> None:
+        readme = Path("README.md").read_text(encoding="utf-8")
+        prd = Path("PRD.md").read_text(encoding="utf-8")
+
+        self.assertIn("前端摘要和评估报告使用同一套 skill metadata 解析规则", readme)
+        self.assertIn("优先使用 frontmatter 的 display_name 和 user_id", readme)
+        self.assertIn("服务端 public persona 摘要和 evaluate-skills 必须复用同一套 skill metadata parser", prd)
 
     def test_docs_describe_safe_skill_artifact_identity_metadata(self) -> None:
         readme = Path("README.md").read_text(encoding="utf-8")

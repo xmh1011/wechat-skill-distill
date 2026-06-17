@@ -19,7 +19,8 @@ MEMORY_BACKEND_TEXT = {
 - types：`["world", "observation"]`
 - tags：优先使用 `user:{userID}` 严格限定当前人物；无结果时再按具体 conversation tag 放宽。
 - tags_match：默认 `all_strict`；conversation fallback 可用 `any_strict`。
-- query：必须包含当前用户原话、最近对话上下文和目标 userID，只检索能直接支撑当前回复的事实。
+- query：保持短而聚焦，包含目标人物、userID、当前用户原话和最近用户追问；需要语义改写时交给宿主 query planner，不能在 skill 或代码里维护固定领域词表，也不能加入未被用户问题或记忆支持的具体公司、学校、人名。
+- include：建议开启 `chunks` 和 `source_facts`，让 agent 在结构化事实不够完整时能看到原始上下文。
 
 如果检索不到直接相关事实，不要编造细节；自然表达不确定或追问。
 不要把 key 写入 skill；只引用环境变量。""",

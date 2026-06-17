@@ -8,7 +8,7 @@ from wechat_skill_distill.evaluation import collect_skill_paths, evaluate_skills
 from wechat_skill_distill.inspection import inspect_weflow_export
 from wechat_skill_distill.memory import build_memory_items, write_jsonl
 from wechat_skill_distill.memory_recall import memory_runtime_status, recall_for_chat
-from wechat_skill_distill.model_client import build_companion_prompt, generate_chat_reply, runtime_status
+from wechat_skill_distill.model_client import build_companion_prompt, generate_chat_reply, generate_recall_query_variants, runtime_status
 from wechat_skill_distill.redaction import redact_weflow_export
 from wechat_skill_distill.skills import generate_skill_texts, write_skill_files
 from wechat_skill_distill.weflow import load_weflow_messages
@@ -266,6 +266,9 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("不要编造", prompt)
         self.assertIn("事实不是风格", prompt)
         self.assertIn("用户问题里的事实前提不自动成立", prompt)
+        self.assertIn("命中由云记忆服务按相关性返回，本地不重排", prompt)
+        self.assertIn("先通读全部命中", prompt)
+        self.assertIn("只能引用记忆命中里的直接陈述", prompt)
 
     def test_hindsight_recall_uses_precise_query_and_strict_user_scope(self) -> None:
         skill = """
@@ -274,14 +277,21 @@ class ToolkitCoreTest(unittest.TestCase):
         - `tags`：`["conversation:chat-a-b"]`
         """
         with patch("wechat_skill_distill.memory_recall.requests.post") as post:
-            post.return_value = MockResponse({"results": [{"id": "m1", "text": "Participant A提到周末可能有空", "type": "world", "metadata": {"userID": "user-a"}}]})
+            post.return_value = MockResponse(
+                {
+                    "results": [
+                        {"id": "m0", "text": "Participant A和Participant B初次认识时互相介绍过名字", "type": "world"},
+                        {"id": "m1", "text": "Participant A在Acme公司工作", "type": "world", "metadata": {"userID": "user-a"}},
+                    ]
+                }
+            )
 
             hits = recall_for_chat(
                 {
-                    "message": "讲讲你之前提过的那件事",
+                    "message": "在哪家公司呢",
                     "skill": skill,
                     "persona": {"name": "Participant A", "userId": "user-a"},
-                    "history": [{"role": "user", "text": "上次说到周末安排"}, {"role": "assistant", "text": "可以先看时间"}],
+                    "history": [{"role": "user", "text": "你是做什么工作的"}, {"role": "assistant", "text": "我是学生"}],
                 },
                 env={
                     "HINDSIGHT_API_URL": "https://memory.example.test/api",
@@ -290,16 +300,55 @@ class ToolkitCoreTest(unittest.TestCase):
                 },
             )
 
-        self.assertEqual([hit["content"] for hit in hits], ["Participant A提到周末可能有空"])
+        self.assertEqual([hit["content"] for hit in hits], ["Participant A和Participant B初次认识时互相介绍过名字", "Participant A在Acme公司工作"])
         self.assertTrue(memory_runtime_status({"HINDSIGHT_API_KEY": "secret"})["configured"])
         first_body = post.call_args.kwargs["json"]
         self.assertEqual(post.call_args_list[0].args[0], "https://memory.example.test/api/v1/default/banks/memory-bank-test/memories/recall")
         self.assertEqual(first_body["tags"], ["user:user-a"])
         self.assertEqual(first_body["tags_match"], "all_strict")
-        self.assertIn("当前用户原话：讲讲你之前提过的那件事", first_body["query"])
-        self.assertIn("最近对话上下文", first_body["query"])
-        self.assertIn("只寻找能够直接回答当前原话", first_body["query"])
-        self.assertIn("忽略仅同属该人物但与当前原话无直接关系", first_body["query"])
+        self.assertIn("当前用户原话：在哪家公司呢", first_body["query"])
+        self.assertIn("最近用户追问", first_body["query"])
+        self.assertIn("你是做什么工作的", first_body["query"])
+        self.assertNotIn("我是学生", first_body["query"])
+        self.assertIn("只寻找能直接回答当前问题", first_body["query"])
+        self.assertNotIn("相关表达", first_body["query"])
+        self.assertNotIn("就职", first_body["query"])
+        self.assertEqual(first_body["max_tokens"], 3200)
+        self.assertIn("chunks", first_body["include"])
+        self.assertIn("source_facts", first_body["include"])
+
+    def test_hindsight_recall_can_use_model_planned_query_without_static_rules(self) -> None:
+        skill = """
+        # Participant A Chat Skill
+        - Bank：`memory-bank-test`
+        """
+        with patch("wechat_skill_distill.memory_recall.generate_recall_query_variants") as planner, patch("wechat_skill_distill.memory_recall.requests.post") as post:
+            planner.return_value = ["Participant A userID=user-a 单位 就职 组织"]
+            post.side_effect = [
+                MockResponse({"results": []}),
+                MockResponse({"results": [{"id": "m1", "text": "Participant A在Acme公司工作", "type": "world"}]}),
+            ]
+
+            hits = recall_for_chat(
+                {
+                    "message": "在哪家公司呢",
+                    "skill": skill,
+                    "persona": {"name": "Participant A", "userId": "user-a"},
+                },
+                env={
+                    "HINDSIGHT_API_URL": "https://memory.example.test/api",
+                    "HINDSIGHT_API_KEY": "secret",
+                    "HINDSIGHT_BANK_ID": "memory-bank-test",
+                    "WSD_RECALL_QUERY_PLANNER": "llm",
+                },
+            )
+
+        self.assertEqual([hit["content"] for hit in hits], ["Participant A在Acme公司工作"])
+        self.assertEqual(post.call_count, 2)
+        self.assertIn("当前用户原话：在哪家公司呢", post.call_args_list[0].kwargs["json"]["query"])
+        self.assertNotIn("就职", post.call_args_list[0].kwargs["json"]["query"])
+        self.assertEqual(post.call_args_list[1].kwargs["json"]["query"], "Participant A userID=user-a 单位 就职 组织")
+        planner.assert_called_once()
 
     def test_hindsight_recall_falls_back_to_skill_conversation_tags(self) -> None:
         skill = """
@@ -379,6 +428,29 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertEqual(kwargs["headers"]["Authorization"], "Bearer secret")
         self.assertEqual(kwargs["json"]["model"], "deepseek-v4-flash")
         self.assertEqual(kwargs["json"]["messages"][-1]["content"], "周末要不要出去？")
+
+    def test_openai_recall_query_planner_outputs_json_queries(self) -> None:
+        with patch("wechat_skill_distill.model_client.requests.post") as post:
+            post.return_value = MockResponse({"choices": [{"message": {"content": '["Participant A userID=user-a 学校 本科 专业", "Participant A userID=user-a 求学 经历"]'}}]})
+
+            queries = generate_recall_query_variants(
+                {
+                    "persona": {"name": "Participant A", "userId": "user-a"},
+                    "message": "你的求学经历是啥样的",
+                    "history": "无",
+                },
+                env={
+                    "WSD_OPENAI_API_KEY": "secret",
+                    "WSD_OPENAI_MODEL": "deepseek-v4-flash",
+                    "WSD_OPENAI_BASE_URL": "https://oneapi.example.test/v1",
+                    "WSD_MODEL_PROVIDER": "openai",
+                },
+            )
+
+        self.assertEqual(queries, ["Participant A userID=user-a 学校 本科 专业", "Participant A userID=user-a 求学 经历"])
+        system_prompt = post.call_args.kwargs["json"]["messages"][0]["content"]
+        self.assertIn("不能加入输入中没有出现的具体公司", system_prompt)
+        self.assertIn("只输出 JSON 数组", system_prompt)
 
     def test_openai_prompt_carries_grounding_contract_without_keyword_guard(self) -> None:
         with patch("wechat_skill_distill.model_client.requests.post") as post:

@@ -7,8 +7,13 @@ from typing import Any, Mapping
 
 import requests
 
+from .model_client import generate_recall_query_variants
+
 
 DEFAULT_BANK_ID = "default-bank"
+DEFAULT_RESULT_LIMIT = 24
+DEFAULT_CHUNK_TOKENS = 2400
+DEFAULT_SOURCE_FACT_TOKENS = 2400
 SMALL_TALK_MESSAGES = {
     "你好",
     "您好",
@@ -92,15 +97,14 @@ def _hindsight_recall_for_chat(payload: Mapping[str, Any], env: Mapping[str, str
     if not tag_attempts:
         tag_attempts = [([], "any_strict")]
     results: list[dict[str, Any]] = []
-    history = _recent_context(payload)
+    history = _recent_user_context(payload)
+    queries = _recall_queries(message, persona_name, user_id, history, payload, env)
     for tags, tags_match in tag_attempts:
-        request_body = _recall_payload(message, persona_name, user_id, history, tags, tags_match, env)
-        results = _post_hindsight_recall(api_url, api_key, bank_id, request_body, env)
+        results = _run_recall_queries(api_url, api_key, bank_id, queries, tags, tags_match, env)
         if results:
             break
     if not results and _env(env, "WSD_HINDSIGHT_DISABLE_TAG_FALLBACK", default="0") != "1":
-        fallback_body = _recall_payload(message, persona_name, user_id, history, [], "any_strict", env)
-        results = _post_hindsight_recall(api_url, api_key, bank_id, fallback_body, env)
+        results = _run_recall_queries(api_url, api_key, bank_id, queries, [], "any_strict", env)
     return results
 
 
@@ -145,18 +149,20 @@ def _recall_tag_attempts(skill: str, user_id: str, env: Mapping[str, str]) -> li
     return attempts
 
 
-def _recent_context(payload: Mapping[str, Any]) -> str:
+def _recent_user_context(payload: Mapping[str, Any]) -> str:
     history = payload.get("history")
     if not isinstance(history, list):
         return "无"
     lines = []
-    for item in history[-6:]:
+    for item in history[-8:]:
         if not isinstance(item, Mapping):
             continue
         role = str(item.get("role") or "").strip()
+        if role != "user":
+            continue
         text = str(item.get("text") or item.get("content") or "").strip()
-        if role and text:
-            lines.append(f"{role}: {text[:160]}")
+        if text:
+            lines.append(f"用户：{text[:160]}")
     return "\n".join(lines) or "无"
 
 
@@ -164,27 +170,70 @@ def _format_query_template(template: str, values: Mapping[str, str]) -> str:
     return template.format_map({key: values.get(key, "") for key in ("name", "user_id", "message", "history")})
 
 
-def _recall_payload(message: str, persona_name: str, user_id: str, history: str, tags: list[str], tags_match: str, env: Mapping[str, str]) -> dict[str, Any]:
+def _recall_queries(message: str, persona_name: str, user_id: str, history: str, payload: Mapping[str, Any], env: Mapping[str, str]) -> list[str]:
+    base_query = _base_recall_query(message, persona_name, user_id, history, env)
+    queries = [base_query]
+    planner_mode = _env(env, "WSD_RECALL_QUERY_PLANNER", "RECALL_QUERY_PLANNER", default="off").lower()
+    if planner_mode in {"llm", "model", "on", "1", "true"}:
+        try:
+            planned = generate_recall_query_variants(
+                {
+                    "persona": {"name": persona_name, "userId": user_id},
+                    "message": message,
+                    "history": history,
+                    "provider": payload.get("provider"),
+                    "model": payload.get("model"),
+                },
+                env=env,
+            )
+        except Exception:
+            planned = []
+        queries.extend(planned)
+    max_variants = int(_env(env, "WSD_HINDSIGHT_QUERY_VARIANTS", "HINDSIGHT_QUERY_VARIANTS", default="3"))
+    deduped = []
+    seen = set()
+    for query in queries:
+        compact = re.sub(r"\s+", " ", query).strip()
+        if compact and compact not in seen:
+            deduped.append(compact)
+            seen.add(compact)
+        if len(deduped) >= max_variants:
+            break
+    return deduped
+
+
+def _base_recall_query(message: str, persona_name: str, user_id: str, history: str, env: Mapping[str, str]) -> str:
     query_template = _env(
         env,
         "WSD_HINDSIGHT_QUERY_TEMPLATE",
         "HINDSIGHT_QUERY_TEMPLATE",
         default=(
-            "检索目标人物：{name}（userID={user_id}）。\n"
+            "检索目标人物：{name}（userID={user_id}）。"
             "当前用户原话：{message}\n"
-            "最近对话上下文：\n{history}\n"
-            "检索任务：只寻找能够直接回答当前原话的已记录事实、事件、偏好、关系或时间线证据。"
-            "优先返回目标人物本人相关事实；如果问题问双方互动，才返回双方共同事实。"
-            "忽略仅同属该人物但与当前原话无直接关系的泛化画像、工作杂事、初识记录或其他弱相关事实。"
+            "最近用户追问：\n{history}\n"
+            "只寻找能直接回答当前问题的已记录事实证据。"
         ),
     )
-    query = _format_query_template(query_template, {"name": persona_name, "user_id": user_id, "message": message, "history": history})
+    return _format_query_template(query_template, {"name": persona_name, "user_id": user_id, "message": message, "history": history})
+
+
+def _recall_payload(query: str, tags: list[str], tags_match: str, env: Mapping[str, str]) -> dict[str, Any]:
     body: dict[str, Any] = {
         "query": query,
         "types": _csv(_env(env, "WSD_HINDSIGHT_TYPES", "HINDSIGHT_TYPES", default="world,observation")),
         "budget": _env(env, "WSD_HINDSIGHT_BUDGET", "HINDSIGHT_BUDGET", default="mid"),
-        "max_tokens": int(_env(env, "WSD_HINDSIGHT_MAX_TOKENS", "HINDSIGHT_MAX_TOKENS", default="1800")),
+        "max_tokens": int(_env(env, "WSD_HINDSIGHT_MAX_TOKENS", "HINDSIGHT_MAX_TOKENS", default="3200")),
     }
+    include: dict[str, Any] = {}
+    if _env(env, "WSD_HINDSIGHT_INCLUDE_CHUNKS", "HINDSIGHT_INCLUDE_CHUNKS", default="1").lower() not in {"0", "false", "no"}:
+        include["chunks"] = {"max_tokens": int(_env(env, "WSD_HINDSIGHT_CHUNK_TOKENS", "HINDSIGHT_CHUNK_TOKENS", default=str(DEFAULT_CHUNK_TOKENS)))}
+    if _env(env, "WSD_HINDSIGHT_INCLUDE_SOURCE_FACTS", "HINDSIGHT_INCLUDE_SOURCE_FACTS", default="1").lower() not in {"0", "false", "no"}:
+        include["source_facts"] = {
+            "max_tokens": int(_env(env, "WSD_HINDSIGHT_SOURCE_FACT_TOKENS", "HINDSIGHT_SOURCE_FACT_TOKENS", default=str(DEFAULT_SOURCE_FACT_TOKENS))),
+            "max_tokens_per_observation": int(_env(env, "WSD_HINDSIGHT_SOURCE_FACT_TOKENS_PER_OBSERVATION", "HINDSIGHT_SOURCE_FACT_TOKENS_PER_OBSERVATION", default="800")),
+        }
+    if include:
+        body["include"] = include
     if tags:
         body["tags"] = tags
         body["tags_match"] = tags_match
@@ -192,6 +241,28 @@ def _recall_payload(message: str, persona_name: str, user_id: str, history: str,
     if query_timestamp:
         body["query_timestamp"] = query_timestamp
     return body
+
+
+def _run_recall_queries(
+    api_url: str,
+    api_key: str,
+    bank_id: str,
+    queries: list[str],
+    tags: list[str],
+    tags_match: str,
+    env: Mapping[str, str],
+) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    seen = set()
+    for query in queries:
+        request_body = _recall_payload(query, tags, tags_match, env)
+        for item in _post_hindsight_recall(api_url, api_key, bank_id, request_body, env):
+            key = item.get("id") or item.get("content")
+            if key in seen:
+                continue
+            merged.append(item)
+            seen.add(key)
+    return merged
 
 
 def _post_hindsight_recall(api_url: str, api_key: str, bank_id: str, body: dict[str, Any], env: Mapping[str, str]) -> list[dict[str, Any]]:
@@ -214,17 +285,38 @@ def _post_hindsight_recall(api_url: str, api_key: str, bank_id: str, body: dict[
         raw_results = data
     if not isinstance(raw_results, list):
         return []
+    chunks = data.get("chunks") if isinstance(data, Mapping) else None
+    if not isinstance(chunks, Mapping):
+        chunks = {}
+    source_facts = data.get("source_facts") if isinstance(data, Mapping) else None
+    if not isinstance(source_facts, Mapping):
+        source_facts = {}
+    result_limit = int(_env(env, "WSD_HINDSIGHT_RESULT_LIMIT", "HINDSIGHT_RESULT_LIMIT", default=str(DEFAULT_RESULT_LIMIT)))
     results = []
-    for item in raw_results[:12]:
+    for item in raw_results[:result_limit]:
         if not isinstance(item, Mapping):
             continue
         text = _localize_hindsight_text(str(item.get("text") or item.get("content") or "").strip())
         if not text:
             continue
+        source_text = _source_fact_excerpt(item, source_facts)
+        if source_text:
+            text = f"{text}\n来源事实：{source_text}"
+        chunk_text = _chunk_excerpt(item, chunks)
+        if chunk_text:
+            text = f"{text}\n原始片段：{chunk_text}"
+        metadata = item.get("metadata") or {}
+        if isinstance(metadata, Mapping):
+            metadata = dict(metadata)
+        else:
+            metadata = {}
+        timestamp = metadata.get("timestamp") or item.get("occurred_start") or item.get("mentioned_at")
+        if timestamp:
+            metadata.setdefault("timestamp", timestamp)
         results.append(
             {
                 "content": text,
-                "metadata": item.get("metadata") or {},
+                "metadata": metadata,
                 "tags": item.get("tags") or [],
                 "id": item.get("id"),
                 "type": item.get("type"),
@@ -232,6 +324,37 @@ def _post_hindsight_recall(api_url: str, api_key: str, bank_id: str, body: dict[
             }
         )
     return results
+
+
+def _source_fact_excerpt(item: Mapping[str, Any], source_facts: Mapping[str, Any], limit: int = 700) -> str:
+    fact_ids = item.get("source_fact_ids")
+    if not isinstance(fact_ids, list):
+        return ""
+    texts = []
+    for fact_id in fact_ids[:3]:
+        fact = source_facts.get(str(fact_id))
+        if not isinstance(fact, Mapping):
+            continue
+        text = _localize_hindsight_text(str(fact.get("text") or "").strip())
+        if text:
+            texts.append(text)
+    return _truncate_text("；".join(texts), limit)
+
+
+def _chunk_excerpt(item: Mapping[str, Any], chunks: Mapping[str, Any], limit: int = 900) -> str:
+    chunk_id = str(item.get("chunk_id") or "")
+    if not chunk_id:
+        return ""
+    chunk = chunks.get(chunk_id)
+    if not isinstance(chunk, Mapping):
+        return ""
+    return _truncate_text(str(chunk.get("text") or "").strip().replace("\n", " | "), limit)
+
+
+def _truncate_text(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
 
 
 def _localize_hindsight_text(text: str) -> str:

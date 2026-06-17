@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import os
+import re
 from typing import Any, Mapping
 
 import requests
@@ -114,8 +116,9 @@ def build_companion_prompt(payload: Mapping[str, Any]) -> str:
     user_id = persona.get("userId") or "-"
     skill_text = str(payload.get("skill") or "").strip()
     memory_hits = payload.get("memory_hits") or []
+    memory_limit = int(_env(os.environ, "WSD_COMPANION_MEMORY_LIMIT", "COMPANION_MEMORY_LIMIT", default="48"))
     hit_lines = []
-    for index, hit in enumerate(memory_hits[:8], start=1):
+    for index, hit in enumerate(memory_hits[:memory_limit], start=1):
         if isinstance(hit, Mapping):
             content = str(hit.get("content") or "").strip()
             metadata = hit.get("metadata") or {}
@@ -137,9 +140,12 @@ def build_companion_prompt(payload: Mapping[str, Any]) -> str:
 - 默认只输出一条自然聊天回复，不加说话人标签，不解释你正在使用 skill。
 - 使用中文微信私聊语气，像真实聊天，不要写成报告、总结、客服话术或长篇建议。
 - 事实不是风格：skill 样本只用于学习语气，不能据此推断新的个人事实。
-- 需要事实时优先使用“记忆命中”；只使用与当前人物和当前问题直接相关的命中。
+- 需要事实时优先使用“记忆命中”；命中由云记忆服务按相关性返回，本地不重排，只使用与当前人物和当前问题直接相关的命中。
+- 不要默认第一条命中就是答案；回答事实问题前先通读全部命中，找包含明确谓词、主体和取值的直接陈述。
+- 回答职业、公司、学校、学历、关系、地点等身份事实时，只能引用记忆命中里的直接陈述；如果只有间接线索，就自然说“只记得大概线索/不能说死”。
 - 用户问题里的事实前提不自动成立。只有当前输入、对话历史、skill 明示配置或记忆命中能支撑时，才可以顺着该前提回答。
 - 如果记忆命中为空，或命中内容不能支撑当前问题，必须自然表达不确定、记不清或追问，不要编造或写故事补空白。
+- 如果记忆命中同时有强弱证据，优先使用更具体、能直接回答问题的那条；不要被泛泛工作动态、初识记录、玩笑称呼或他人经历带跑。
 - 如果信息不足，可以自然地追问或降低确定性。
 - 可以温和陪伴，但不要越界承诺、诊断或替用户做重大决定。
 
@@ -149,6 +155,71 @@ def build_companion_prompt(payload: Mapping[str, Any]) -> str:
 ## 记忆命中
 {hit_text}
 """
+
+
+def build_recall_query_planner_prompt() -> str:
+    return """你是云记忆检索 query planner。你的任务是把用户当前问题改写成少量 recall 查询，不回答问题。
+
+必须遵守：
+- 保留目标人物姓名和 userID。
+- 可以使用同义词、上位词、相关说法来提高召回，但不能加入输入中没有出现的具体公司、学校、地点、人名、产品、事件。
+- 不要只复述用户原话；至少一条 query 要拆成检索词，覆盖问题隐含的抽象属性名、常见记录字段和可能的说法。
+- 只能补充抽象字段词，不能补充具体取值。抽象字段词用于查找事实，不能被当作事实答案。
+- 不要编造事实，不要根据常识补全。
+- 每条 query 都应短而具体，优先能帮助云记忆召回直接事实证据。
+- 只输出 JSON 数组，包含 1-3 个字符串；不要输出解释、Markdown 或代码块。
+"""
+
+
+def generate_recall_query_variants(payload: Mapping[str, Any], env: Mapping[str, str] | None = None) -> list[str]:
+    current_env = env or os.environ
+    requested_provider = str(payload.get("provider") or _env(current_env, "WSD_MODEL_PROVIDER", "MODEL_PROVIDER", default="openai"))
+    config = provider_config(requested_provider, current_env)
+    if not config.api_key or not config.model:
+        return []
+    persona = payload.get("persona") or {}
+    persona_name = str(persona.get("name") or "当前人物")
+    user_id = str(persona.get("userId") or "-")
+    message = str(payload.get("message") or "").strip()
+    history = str(payload.get("history") or "无").strip() or "无"
+    user_prompt = f"""目标人物：{persona_name}
+userID：{user_id}
+当前用户原话：{message}
+最近用户追问：
+{history}
+"""
+    text, _ = _call_text_model(config, build_recall_query_planner_prompt(), user_prompt, current_env, max_tokens=320, temperature=0)
+    return _parse_query_variants(text, persona_name, user_id)
+
+
+def _parse_query_variants(text: str, persona_name: str, user_id: str) -> list[str]:
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    parsed: Any
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError:
+        parsed = [line.strip("- 0123456789.、\t ") for line in cleaned.splitlines() if line.strip()]
+    if not isinstance(parsed, list):
+        return []
+    prefix = f"{persona_name} userID={user_id}"
+    queries = []
+    seen = set()
+    for item in parsed:
+        query = re.sub(r"\s+", " ", str(item or "").strip())
+        if not query:
+            continue
+        if persona_name not in query and user_id not in query:
+            query = f"{prefix} {query}"
+        query = query[:160].strip()
+        if query and query not in seen:
+            queries.append(query)
+            seen.add(query)
+        if len(queries) >= 3:
+            break
+    return queries
 
 
 def _clean_history(history: Any) -> list[dict[str, str]]:
@@ -192,6 +263,83 @@ def _max_tokens(env: Mapping[str, str], default: int = 800) -> int:
         return int(value)
     except ValueError as exc:
         raise ModelConfigError("MODEL_MAX_TOKENS must be an integer") from exc
+
+
+def _call_text_model(
+    config: ProviderConfig,
+    system_prompt: str,
+    user_prompt: str,
+    env: Mapping[str, str],
+    *,
+    max_tokens: int,
+    temperature: float | None = None,
+) -> tuple[str, Mapping[str, Any]]:
+    if config.provider == "openai":
+        body: dict[str, Any] = {
+            "model": config.model,
+            "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+            "max_tokens": max_tokens,
+        }
+        if temperature is not None:
+            body["temperature"] = temperature
+        response = requests.post(
+            f"{config.base_url.rstrip('/')}/chat/completions",
+            headers={"Authorization": f"Bearer {config.api_key}", "Content-Type": "application/json"},
+            json=body,
+            timeout=60,
+        )
+        raw = _response_json(response)
+        try:
+            text = raw["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ModelCallError("OpenAI-compatible response did not include choices[0].message.content") from exc
+        return str(text), raw
+    if config.provider == "anthropic":
+        body = {
+            "model": config.model,
+            "max_tokens": max_tokens,
+            "system": system_prompt,
+            "messages": [{"role": "user", "content": user_prompt}],
+        }
+        if temperature is not None:
+            body["temperature"] = temperature
+        response = requests.post(
+            f"{config.base_url.rstrip('/')}/v1/messages",
+            headers={
+                "x-api-key": config.api_key,
+                "anthropic-version": _env(env, "WSD_ANTHROPIC_VERSION", "ANTHROPIC_VERSION", default="2023-06-01"),
+                "Content-Type": "application/json",
+            },
+            json=body,
+            timeout=60,
+        )
+        raw = _response_json(response)
+        try:
+            text = "".join(part.get("text", "") for part in raw["content"] if part.get("type") == "text")
+        except (KeyError, TypeError) as exc:
+            raise ModelCallError("Anthropic response did not include text content") from exc
+        return text, raw
+    model_name = config.model if config.model.startswith("models/") else f"models/{config.model}"
+    generation_config: dict[str, Any] = {"maxOutputTokens": max_tokens}
+    if temperature is not None:
+        generation_config["temperature"] = temperature
+    response = requests.post(
+        f"{config.base_url.rstrip('/')}/{model_name}:generateContent",
+        headers={"x-goog-api-key": config.api_key, "Content-Type": "application/json"},
+        json={
+            "systemInstruction": {"parts": [{"text": system_prompt}]},
+            "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
+            "generationConfig": generation_config,
+        },
+        timeout=60,
+    )
+    raw = _response_json(response)
+    try:
+        parts = raw["candidates"][0]["content"]["parts"]
+        text = "".join(part.get("text", "") for part in parts)
+    except (KeyError, IndexError, TypeError) as exc:
+        raise ModelCallError("Gemini response did not include candidates[0].content.parts text") from exc
+    return text, raw
 
 
 def generate_chat_reply(payload: Mapping[str, Any], env: Mapping[str, str] | None = None) -> dict[str, Any]:

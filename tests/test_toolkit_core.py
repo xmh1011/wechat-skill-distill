@@ -276,12 +276,15 @@ class ToolkitCoreTest(unittest.TestCase):
 
         self.assertIn("client.search", mem0_skill)
         self.assertIn("user_id：当前 skill 对应的 userID", mem0_skill)
-        self.assertIn("query：包含目标人物、userID、当前用户原话和必要的最近用户追问", mem0_skill)
+        self.assertIn("包含目标人物、userID、当前用户原话和必要的最近用户追问", mem0_skill)
         self.assertIn("MEMORY_RECALL_URL", generic_skill)
         self.assertIn("请求字段建议：`query`、`queries`、`user_id`、`persona`、`history`、`tags`、`limit`、`max_tokens`", generic_skill)
         self.assertIn("不要在 skill 或代码里维护固定领域词表", generic_skill)
         self.assertIn("排序和 rerank 交给记忆后端", generic_skill)
-        self.assertIn("query planner 只整理指代和上下文", hindsight_skill)
+        for skill in [mem0_skill, generic_skill, hindsight_skill]:
+            self.assertIn("query planner 只整理指代和上下文", skill)
+            self.assertIn("不扩展业务关键词", skill)
+            self.assertIn("排序和 rerank 交给记忆后端", skill)
         self.assertIn("宿主运行时或 agent", jsonl_skill)
         self.assertNotIn("宿主 agent 先在 JSONL", jsonl_skill)
 

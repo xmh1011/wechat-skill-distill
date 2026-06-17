@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+import hashlib
+import json
 from pathlib import Path
 import re
 
@@ -91,6 +93,29 @@ def _style_summary(user_messages: list[ChatMessage]) -> str:
     return f"- 平均消息长度约 {avg_len:.1f} 字；短消息占比约 {short_ratio:.0%}。\n- 常见表达：{'、'.join(_common_phrases(user_messages)) or '样本不足'}。"
 
 
+def _one_line(value: object, fallback: str) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    return text or fallback
+
+
+def _skill_slug(value: str, fallback: str = "user") -> str:
+    slug = re.sub(r"[^A-Za-z0-9_-]+", "-", value.strip().lower()).strip("-_")
+    if slug:
+        return slug
+    digest = hashlib.sha1(value.encode("utf-8")).hexdigest()[:8]
+    return f"{fallback}-{digest}"
+
+
+def _safe_filename_stem(value: str, fallback: str = "user") -> str:
+    stem = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", _one_line(value, fallback))
+    stem = re.sub(r"_+", "_", stem).strip(" ._")
+    if not stem or stem in {".", ".."}:
+        stem = fallback
+    if stem.upper() in {"CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"}:
+        stem = f"{stem}_"
+    return stem
+
+
 def generate_skill_texts(
     messages: list[ChatMessage],
     *,
@@ -103,13 +128,15 @@ def generate_skill_texts(
     for user_id, user_messages in by_user.items():
         if not user_messages:
             continue
-        name = user_messages[0].sender_name
+        skill_user_id = _one_line(user_id, "user")
+        name = _one_line(user_messages[0].sender_name, skill_user_id)
+        skill_name = f"chat-user-{_skill_slug(skill_user_id)}"
         samples = "\n".join(f"```text\n{line}\n```" for line in _sample_lines(user_messages))
         title = f"{name} Chat Skill" if include_memory else f"{name} Skill"
         description = (
-            f"模拟 userID={user_id} 的中文微信私聊回复；需要事实时结合记忆检索。"
+            f"模拟 userID={skill_user_id} 的中文微信私聊回复；需要事实时结合记忆检索。"
             if include_memory
-            else f"模拟 userID={user_id} 的中文微信私聊回复；仅提炼说话风格。"
+            else f"模拟 userID={skill_user_id} 的中文微信私聊回复；仅提炼说话风格。"
         )
         recall_guidance = (
             "- 当前问题涉及这个人的经历、偏好、关系、时间线或上下文事实时，先按下面的记忆检索约定 recall。"
@@ -140,12 +167,14 @@ def generate_skill_texts(
         partial_fact_source = "检索结果或上下文" if include_memory else "当前上下文"
         deep_fact_source = "上下文或记忆" if include_memory else "当前上下文"
         memory_boundary = (
-            f"- 如果记忆命中提到另一个人，不能自动当成 userID={user_id} {name} 的事实。"
+            f"- 如果记忆命中提到另一个人，不能自动当成 userID={skill_user_id} {name} 的事实。"
             if include_memory
             else "- 不要引用或暗示不存在的历史记录。"
         )
         skills[user_id] = f"""---
-name: chat-user-{user_id}
+name: {skill_name}
+user_id: {json.dumps(skill_user_id, ensure_ascii=False)}
+display_name: {json.dumps(name, ensure_ascii=False)}
 description: {description}
 ---
 
@@ -153,11 +182,11 @@ description: {description}
 
 ## 目标
 
-模拟 userID={user_id} {name} 的微信私聊表达。默认只输出聊天内容，不加说话人标签，不解释自己使用了 skill。
+模拟 userID={skill_user_id} {name} 的微信私聊表达。默认只输出聊天内容，不加说话人标签，不解释自己使用了 skill。
 
 ## 使用时机
 
-- 需要以 userID={user_id} 的身份进行中文微信私聊回复时使用。
+- 需要以 userID={skill_user_id} 的身份进行中文微信私聊回复时使用。
 {recall_guidance}
 - 只负责生成这个用户的回复，不负责替另一个聊天参与者补话。
 {memory_section}
@@ -243,7 +272,8 @@ def write_skill_files(skills: dict[str, str], out_dir: Path, *, suffix: str = "s
     written: list[Path] = []
     for user_id, text in skills.items():
         name_match = re.search(r"# (.+?) (?:Chat )?Skill", text)
-        name = name_match.group(1) if name_match else f"user-{user_id}"
+        name = name_match.group(1) if name_match else f"user-{_skill_slug(_one_line(user_id, 'user'))}"
+        name = _safe_filename_stem(name)
         path = out_dir / f"{name}.{suffix}"
         path.write_text(text.rstrip() + "\n", encoding="utf-8")
         written.append(path)

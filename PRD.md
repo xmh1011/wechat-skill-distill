@@ -195,6 +195,8 @@ wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765 --env-file .env
 - 不包含 `## 记忆检索`。
 - 不引用 Hindsight、Mem0、generic HTTP、JSONL recall。
 - 适合离线角色风格模拟、提示词库和手动审查。
+- skill frontmatter 必须包含稳定 `name`、`user_id` 和 `display_name`。
+- 输出文件名必须做文件系统安全转义，不能由展示名或 userID 产生路径穿越、子目录或非法文件名。
 
 ### FR4 有记忆 chat skill
 
@@ -203,6 +205,8 @@ wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765 --env-file .env
 - 必须包含 memory backend 专属 recall 指南。
 - 支持 `jsonl`、`generic-http`、`hindsight`、`mem0`。
 - 不写入真实 key，只引用环境变量。
+- skill frontmatter 必须包含稳定 `name`、`user_id` 和 `display_name`。
+- 输出文件名必须做文件系统安全转义，不能由展示名或 userID 产生路径穿越、子目录或非法文件名。
 
 ### FR5 Memory adapter
 

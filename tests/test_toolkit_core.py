@@ -123,6 +123,38 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("边界：", skills["user-a"])
         self.assertTrue(any(path.name == "Participant A.chat-memory.skill" for path in written))
 
+    def test_generated_skill_artifacts_escape_path_hostile_identity_fields(self) -> None:
+        export = self.sample_export()
+        export["messages"][0]["senderDisplayName"] = "A/B:测试\n人"
+        export["messages"] = [export["messages"][0]]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "chat.json"
+            out_dir = Path(tmp) / "skills"
+            path.write_text(json.dumps(export, ensure_ascii=False), encoding="utf-8")
+            messages = load_weflow_messages(
+                path,
+                participants={
+                    "0": {"user_id": "tenant/a b:01", "name": "A/B:测试\n人"},
+                },
+            )
+
+            skills = generate_skill_texts(messages, include_memory=True, memory_backend="jsonl")
+            written = write_skill_files(skills, out_dir, suffix="chat-memory.skill")
+
+            skill_text = skills["tenant/a b:01"]
+            self.assertIn("name: chat-user-tenant-a-b-01", skill_text)
+            self.assertIn('user_id: "tenant/a b:01"', skill_text)
+            self.assertIn('display_name: "A/B:测试 人"', skill_text)
+            self.assertIn("# A/B:测试 人 Chat Skill", skill_text)
+            self.assertEqual(len(written), 1)
+            self.assertEqual(written[0].parent, out_dir)
+            self.assertEqual(written[0].name, "A_B_测试 人.chat-memory.skill")
+            self.assertTrue(written[0].exists())
+            report = evaluate_skills(written, messages=messages)
+            self.assertEqual(report["summary"]["failed"], 0)
+            self.assertEqual(report["skills"][0]["user_id"], "tenant/a b:01")
+            self.assertEqual(report["skills"][0]["name"], "A/B:测试 人")
+
     def test_memory_chat_skill_templates_describe_backend_neutral_recall_contracts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "chat.json"
@@ -466,6 +498,15 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertNotIn("WSD_MEMORY_QUERY_VARIANTS=3", readme)
         self.assertNotIn("WSD_MEMORY_QUERY_VARIANTS=3", env_example)
 
+    def test_docs_describe_safe_skill_artifact_identity_metadata(self) -> None:
+        readme = Path("README.md").read_text(encoding="utf-8")
+        prd = Path("PRD.md").read_text(encoding="utf-8")
+
+        self.assertIn("输出文件名会从展示名派生并做文件系统安全转义", readme)
+        self.assertIn("真实展示名和 user_id 保存在 skill frontmatter", readme)
+        self.assertIn("skill frontmatter 必须包含稳定 `name`、`user_id` 和 `display_name`", prd)
+        self.assertIn("输出文件名必须做文件系统安全转义", prd)
+
     def test_generic_http_recall_backend_uses_common_runtime_contract(self) -> None:
         with patch("wechat_skill_distill.memory_recall.requests.post") as post:
             post.return_value = MockResponse(
@@ -591,6 +632,9 @@ class ToolkitCoreTest(unittest.TestCase):
         for private_name in ["肖明浩", "胡翔川", "牧之", "661", "662", "Skill Companion Lab"]:
             self.assertNotIn(private_name, source)
         self.assertIn("persona.name", source)
+        self.assertIn("frontmatterValue", source)
+        self.assertIn("display_name", source)
+        self.assertIn("user_id", source)
         self.assertIn("已配置 ${persona.samples.length} 条风格样本", source)
         self.assertNotIn("组场景示例", source)
         self.assertNotIn("后台模型未配置", source)

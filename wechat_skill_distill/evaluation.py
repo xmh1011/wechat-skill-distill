@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
+import json
 from pathlib import Path
 import re
 from typing import Any
@@ -65,7 +66,24 @@ def _skill_name(text: str, path: Path) -> str:
     return path.name.split(".")[0]
 
 
+def _frontmatter_value(text: str, key: str) -> str | None:
+    match = re.search(rf"^{re.escape(key)}:\s*(.+?)\s*$", text, re.MULTILINE)
+    if not match:
+        return None
+    value = match.group(1).strip()
+    if value.startswith(('"', "'")):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return value.strip("\"'")
+        return str(parsed)
+    return value
+
+
 def _skill_user_id(text: str) -> str | None:
+    frontmatter_user_id = _frontmatter_value(text, "user_id")
+    if frontmatter_user_id:
+        return frontmatter_user_id
     match = re.search(r"userID=([^\s，。`]+)", text)
     return match.group(1) if match else None
 

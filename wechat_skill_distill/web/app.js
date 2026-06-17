@@ -33,18 +33,35 @@ const els = {
   messageTemplate: document.getElementById("messageTemplate")
 };
 
+function frontmatterValue(text, key) {
+  const match = text.match(new RegExp(`^${key}:\\s*(.+?)\\s*$`, "m"));
+  if (!match) return "";
+  const raw = match[1].trim();
+  if (raw.startsWith("\"")) {
+    try {
+      return JSON.parse(raw);
+    } catch (_) {
+      return raw.replace(/^"|"$/g, "");
+    }
+  }
+  return raw.replace(/^'|'$/g, "");
+}
+
 function parseSkill(text, fileName = "skill", stableId = "") {
   const titleMatch = text.match(/^#\s+(.+?)\s+(Chat\s+)?Skill\s*$/m);
   const userMatch = text.match(/userID=([^\s，。`]+)/);
+  const frontmatterUserId = frontmatterValue(text, "user_id");
+  const frontmatterName = frontmatterValue(text, "display_name");
   const commonLine = text.match(/常见表达：([^\n]+)/);
   const samples = [...text.matchAll(/```text\n([\s\S]*?)\n```/g)].map((match) => match[1].trim()).filter(Boolean);
   const phrases = commonLine ? commonLine[1].replace(/[。.;；]\s*$/, "").split(/[、,，]/).map((item) => item.trim()).filter(Boolean) : [];
-  const name = titleMatch ? titleMatch[1].trim() : fileName.replace(/\.(chat-memory\.)?skill$/i, "");
-  const id = stableId || `${userMatch ? userMatch[1] : name}-${Math.random().toString(16).slice(2)}`;
+  const name = frontmatterName || (titleMatch ? titleMatch[1].trim() : fileName.replace(/\.(chat-memory\.)?skill$/i, ""));
+  const userId = frontmatterUserId || (userMatch ? userMatch[1] : "-");
+  const id = stableId || `${userId !== "-" ? userId : name}-${Math.random().toString(16).slice(2)}`;
   return {
     id,
     name,
-    userId: userMatch ? userMatch[1] : "-",
+    userId,
     memoryAware: text.includes("## 记忆检索"),
     phrases,
     samples,

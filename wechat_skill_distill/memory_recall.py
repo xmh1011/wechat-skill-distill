@@ -16,6 +16,7 @@ DEFAULT_CHUNK_TOKENS = 2400
 DEFAULT_SOURCE_FACT_TOKENS = 2400
 DISABLED_BACKENDS = {"", "off", "none", "disabled", "false", "0"}
 AUTO_BACKENDS = {"", "auto", "default"}
+QUERY_PLANNER_MODES = {"auto", "llm", "model", "on", "1", "true"}
 SMALL_TALK_MESSAGES = {
     "你好",
     "您好",
@@ -208,16 +209,15 @@ def _format_query_template(template: str, values: Mapping[str, str]) -> str:
 def _recall_queries(message: str, persona_name: str, user_id: str, history: str, payload: Mapping[str, Any], env: Mapping[str, str]) -> list[str]:
     base_query = _base_recall_query(message, persona_name, user_id, history, env)
     queries = [base_query]
-    planner_mode = _env(env, "WSD_RECALL_QUERY_PLANNER", "RECALL_QUERY_PLANNER", default="off").lower()
-    if planner_mode in {"llm", "model", "on", "1", "true"}:
+    planner_mode = _env(env, "WSD_RECALL_QUERY_PLANNER", "RECALL_QUERY_PLANNER", default="auto").lower()
+    planner_enabled = planner_mode in QUERY_PLANNER_MODES
+    if planner_enabled:
         try:
             planned = generate_recall_query_variants(
                 {
                     "persona": {"name": persona_name, "userId": user_id},
                     "message": message,
                     "history": history,
-                    "provider": payload.get("provider"),
-                    "model": payload.get("model"),
                 },
                 env=env,
             )
@@ -226,8 +226,8 @@ def _recall_queries(message: str, persona_name: str, user_id: str, history: str,
         if planned:
             queries = planned
     max_variants = int(_env(env, "WSD_MEMORY_QUERY_VARIANTS", "MEMORY_QUERY_VARIANTS", "WSD_HINDSIGHT_QUERY_VARIANTS", "HINDSIGHT_QUERY_VARIANTS", default="1"))
-    if max_variants > 1 and planner_mode in {"llm", "model", "on", "1", "true"}:
-        queries = [base_query, *queries]
+    if max_variants > 1 and planner_enabled:
+        queries = [*queries, base_query]
     deduped = []
     seen = set()
     for query in queries:

@@ -686,6 +686,40 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertNotIn("就职", post.call_args_list[0].kwargs["json"]["query"])
         planner.assert_called_once()
 
+    def test_hindsight_recall_auto_planner_uses_server_model_without_client_override(self) -> None:
+        skill = """
+        # Participant A Chat Skill
+        - Bank：`memory-bank-test`
+        """
+        with patch("wechat_skill_distill.memory_recall.generate_recall_query_variants") as planner, patch("wechat_skill_distill.memory_recall.requests.post") as post:
+            planner.return_value = ["Participant A userID=user-a 当前问题：在哪家公司呢；上一问：你是做什么工作的"]
+            post.return_value = MockResponse({"results": [{"id": "m1", "text": "Participant A在Acme公司工作", "type": "world"}]})
+
+            recall_for_chat(
+                {
+                    "message": "在哪家公司呢",
+                    "skill": skill,
+                    "persona": {"name": "Participant A", "userId": "user-a"},
+                    "provider": "anthropic",
+                    "model": "client-selected-model",
+                },
+                env={
+                    "HINDSIGHT_API_URL": "https://memory.example.test/api",
+                    "HINDSIGHT_API_KEY": "secret",
+                    "HINDSIGHT_BANK_ID": "memory-bank-test",
+                    "WSD_OPENAI_API_KEY": "model-secret",
+                    "WSD_OPENAI_MODEL": "deepseek-v4-flash",
+                    "WSD_ALLOW_CLIENT_PROVIDER_OVERRIDE": "1",
+                    "WSD_ALLOW_CLIENT_MODEL_OVERRIDE": "1",
+                },
+            )
+
+        self.assertEqual(post.call_count, 1)
+        self.assertEqual(post.call_args.kwargs["json"]["query"], "Participant A userID=user-a 当前问题：在哪家公司呢；上一问：你是做什么工作的")
+        planner_payload = planner.call_args.args[0]
+        self.assertNotIn("provider", planner_payload)
+        self.assertNotIn("model", planner_payload)
+
     def test_hindsight_recall_uses_single_query_to_keep_backend_rerank_authoritative(self) -> None:
         skill = """
         # Participant A Chat Skill
@@ -713,7 +747,7 @@ class ToolkitCoreTest(unittest.TestCase):
 
         self.assertEqual([hit["content"] for hit in hits], ["Participant A在Acme公司工作"])
         self.assertEqual(post.call_count, 1)
-        self.assertIn("当前用户原话：在哪家公司呢", post.call_args.kwargs["json"]["query"])
+        self.assertEqual(post.call_args.kwargs["json"]["query"], "Participant A 当前问题：在哪家公司")
 
     def test_recall_query_planner_prompt_delegates_expansion_to_memory_backend(self) -> None:
         prompt = build_recall_query_planner_prompt()
@@ -813,6 +847,10 @@ class ToolkitCoreTest(unittest.TestCase):
 
         self.assertIn("WSD_MEMORY_QUERY_VARIANTS=1", readme)
         self.assertIn("WSD_MEMORY_QUERY_VARIANTS=1", env_example)
+        self.assertIn("WSD_RECALL_QUERY_PLANNER=auto", readme)
+        self.assertIn("WSD_RECALL_QUERY_PLANNER=auto", env_example)
+        self.assertIn("query planner 只整理指代和上下文", readme)
+        self.assertIn("query planner 默认 auto", prd)
         self.assertIn("默认单 query", readme)
         self.assertIn("排序和 rerank 交给记忆后端", readme)
         self.assertIn("Hindsight 和 Mem0 始终只向后端发送一条 query", readme)
@@ -963,8 +1001,8 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertEqual(post.call_count, 1)
         body = post.call_args.kwargs["json"]
         self.assertEqual(len(body["queries"]), 3)
-        self.assertIn("当前用户原话：在哪家公司呢", body["queries"][0])
-        self.assertEqual(body["queries"][1:], ["Participant A userID=user-a 当前问题：在哪家公司呢", "Participant A userID=user-a 上一问：做什么工作"])
+        self.assertEqual(body["queries"][:2], ["Participant A userID=user-a 当前问题：在哪家公司呢", "Participant A userID=user-a 上一问：做什么工作"])
+        self.assertIn("当前用户原话：在哪家公司呢", body["queries"][2])
 
     def test_generic_http_recall_preserves_backend_order_without_local_rerank(self) -> None:
         with patch("wechat_skill_distill.memory_recall.requests.post") as post:
@@ -1085,7 +1123,7 @@ class ToolkitCoreTest(unittest.TestCase):
 
         self.assertEqual([hit["content"] for hit in hits], ["Participant A在Acme公司工作"])
         self.assertEqual(len(FakeMemoryClient.search_calls), 1)
-        self.assertIn("当前用户原话：在哪家公司呢", FakeMemoryClient.search_calls[0]["query"])
+        self.assertEqual(FakeMemoryClient.search_calls[0]["query"], "Participant A 当前问题：在哪家公司")
 
     def test_frontend_copy_and_defaults_are_persona_neutral(self) -> None:
         root = web_root()

@@ -211,6 +211,7 @@ WSD_MEMORY_RECALL_BACKEND=auto
 WSD_MEMORY_RECALL_MODE=auto
 WSD_MEMORY_RESULT_LIMIT=24
 WSD_MEMORY_MAX_TOKENS=3200
+WSD_RECALL_QUERY_PLANNER=auto
 WSD_MEMORY_QUERY_VARIANTS=1
 ```
 
@@ -246,7 +247,7 @@ JSONL recall:
 JSONL_MEMORY_PATH=exports/memory.jsonl
 ```
 
-Recall runs in `auto` mode by default: lightweight greetings do not query memory, factual turns build a query from the current message, necessary recent user questions, and the active persona. The harness uses a 默认单 query policy；排序和 rerank 交给记忆后端。Hindsight 和 Mem0 始终只向后端发送一条 query，避免 harness 循环召回后做本地合并排序。Hindsight-specific recall first tries strict `user:<id>` scoped recall, then falls back to the skill's conversation tags when the strict pass returns no facts. Other backends receive the same user/persona/query contract and keep their own ranking order. If `WSD_MEMORY_QUERY_VARIANTS` is explicitly set above `1`, Generic HTTP receives all variants in one request through `queries`, so rerank 仍由该记忆后端统一完成。
+Recall runs in `auto` mode by default: lightweight greetings do not query memory, factual turns build a query from the current message, necessary recent user questions, and the active persona. `WSD_RECALL_QUERY_PLANNER=auto` lets the server-side model create one faithful query when model credentials are configured；query planner 只整理指代和上下文，不扩展业务关键词。The harness uses a 默认单 query policy；排序和 rerank 交给记忆后端。Hindsight 和 Mem0 始终只向后端发送一条 query，避免 harness 循环召回后做本地合并排序。Hindsight-specific recall first tries strict `user:<id>` scoped recall, then falls back to the skill's conversation tags when the strict pass returns no facts. Other backends receive the same user/persona/query contract and keep their own ranking order. If `WSD_MEMORY_QUERY_VARIANTS` is explicitly set above `1`, Generic HTTP receives all variants in one request through `queries`, so rerank 仍由该记忆后端统一完成。
 
 Supported model protocols:
 

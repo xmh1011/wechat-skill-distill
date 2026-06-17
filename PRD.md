@@ -267,6 +267,8 @@ wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765 --env-file .env
 - 支持 `--skill <file>` 从服务启动时预加载一个或多个 `.skill` / `.chat-memory.skill`。
 - 使用 package 内置静态资源，不要求 Node.js 或前端构建链。
 - 前端不提供 skill 文件选择入口；persona 来自服务端启动参数。
+- 完整 skill 文本只保存在本地服务端；浏览器不得接收或回传 raw skill 文本。
+- `/api/skills` 只返回 persona 摘要和 `skill_id`，`/api/chat` 根据 `skill_id` 在服务端解析并注入完整 skill。
 - 前端不上传记忆文件、不做浏览器侧检索；JSONL 记忆通过服务端 `JSONL_MEMORY_PATH` 接入。
 - 支持 backend-neutral server-side recall：`/api/chat` 可通过 Hindsight、Generic HTTP、Mem0 或 JSONL 在模型调用前自动检索相关记忆。
 - `/api/chat` 不向浏览器返回 raw memory hits，只返回召回状态摘要。

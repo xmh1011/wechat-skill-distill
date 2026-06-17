@@ -3,6 +3,7 @@ from __future__ import annotations
 from functools import partial
 import json
 import os
+import re
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
@@ -32,6 +33,81 @@ def load_skill_assets(skill_paths: list[Path] | None = None) -> list[dict[str, s
             }
         )
     return assets
+
+
+def _frontmatter_value(text: str, key: str) -> str:
+    match = re.search(rf"^{key}:\s*(.+?)\s*$", text, re.MULTILINE)
+    if not match:
+        return ""
+    raw = match.group(1).strip()
+    if raw.startswith(('"', "'")):
+        try:
+            return str(json.loads(raw))
+        except json.JSONDecodeError:
+            return raw.strip("\"'")
+    return raw
+
+
+def _skill_title_name(text: str, file_name: str) -> str:
+    match = re.search(r"^#\s+(.+?)\s+(?:Chat\s+)?Skill\s*$", text, re.MULTILINE)
+    if match:
+        return match.group(1).strip()
+    return file_name.replace(".chat-memory.skill", "").replace(".skill", "")
+
+
+def _skill_user_id(text: str) -> str:
+    frontmatter_user_id = _frontmatter_value(text, "user_id")
+    if frontmatter_user_id:
+        return frontmatter_user_id
+    match = re.search(r"userID=([^\s，。`]+)", text)
+    return match.group(1) if match else "-"
+
+
+def _skill_phrases(text: str) -> list[str]:
+    match = re.search(r"常见表达：([^\n]+)", text)
+    if not match:
+        return []
+    line = re.sub(r"[。.;；]\s*$", "", match.group(1))
+    return [item.strip() for item in re.split(r"[、,，]", line) if item.strip()][:16]
+
+
+def _skill_sample_count(text: str) -> int:
+    return len(re.findall(r"```text\n[\s\S]*?\n```", text))
+
+
+def _skill_summary(asset: Mapping[str, str]) -> dict[str, Any]:
+    text = str(asset.get("text") or "")
+    file_name = str(asset.get("file_name") or "skill")
+    return {
+        "id": str(asset.get("id") or ""),
+        "file_name": file_name,
+        "name": _frontmatter_value(text, "display_name") or _skill_title_name(text, file_name),
+        "userId": _skill_user_id(text),
+        "memoryAware": "## 记忆检索" in text,
+        "phrases": _skill_phrases(text),
+        "sampleCount": _skill_sample_count(text),
+    }
+
+
+def public_skill_assets(assets: list[dict[str, str]]) -> list[dict[str, Any]]:
+    return [_skill_summary(asset) for asset in assets]
+
+
+def resolve_preloaded_skill_payload(payload: dict[str, Any], assets: list[dict[str, str]]) -> dict[str, Any]:
+    if not assets:
+        return payload
+    skill_id = str(payload.get("skill_id") or payload.get("skillId") or "").strip()
+    if not skill_id and len(assets) == 1:
+        skill_id = assets[0]["id"]
+    selected = next((asset for asset in assets if asset.get("id") == skill_id), None)
+    if not selected:
+        raise ModelConfigError("requested skill_id is not loaded on this server")
+    summary = _skill_summary(selected)
+    return {
+        **payload,
+        "skill": selected.get("text") or "",
+        "persona": {"name": summary["name"], "userId": summary["userId"]},
+    }
 
 
 def _truthy(value: str) -> bool:
@@ -109,7 +185,7 @@ class ChatUIHandler(SimpleHTTPRequestHandler):
             self._write_json(200, {**runtime_status(), "memory": memory_runtime_status()})
             return
         if path == "/api/skills":
-            self._write_json(200, {"skills": self.preloaded_skills})
+            self._write_json(200, {"skills": public_skill_assets(self.preloaded_skills)})
             return
         super().do_GET()
 
@@ -134,8 +210,9 @@ class ChatUIHandler(SimpleHTTPRequestHandler):
             self._write_json(400, {"error": "request body must be a JSON object"})
             return
         try:
-            server_hits = recall_for_chat(payload)
-            enriched_payload, memory_counts = build_enriched_chat_payload(payload, server_hits)
+            resolved_payload = resolve_preloaded_skill_payload(payload, self.preloaded_skills)
+            server_hits = recall_for_chat(resolved_payload)
+            enriched_payload, memory_counts = build_enriched_chat_payload(resolved_payload, server_hits)
             reply = generate_chat_reply(enriched_payload)
             reply["memory"] = memory_counts
         except MemoryRecallError as exc:

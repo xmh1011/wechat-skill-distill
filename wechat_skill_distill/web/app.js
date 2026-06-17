@@ -33,39 +33,17 @@ const els = {
   messageTemplate: document.getElementById("messageTemplate")
 };
 
-function frontmatterValue(text, key) {
-  const match = text.match(new RegExp(`^${key}:\\s*(.+?)\\s*$`, "m"));
-  if (!match) return "";
-  const raw = match[1].trim();
-  if (raw.startsWith("\"")) {
-    try {
-      return JSON.parse(raw);
-    } catch (_) {
-      return raw.replace(/^"|"$/g, "");
-    }
-  }
-  return raw.replace(/^'|'$/g, "");
-}
-
-function parseSkill(text, fileName = "skill", stableId = "") {
-  const titleMatch = text.match(/^#\s+(.+?)\s+(Chat\s+)?Skill\s*$/m);
-  const userMatch = text.match(/userID=([^\s，。`]+)/);
-  const frontmatterUserId = frontmatterValue(text, "user_id");
-  const frontmatterName = frontmatterValue(text, "display_name");
-  const commonLine = text.match(/常见表达：([^\n]+)/);
-  const samples = [...text.matchAll(/```text\n([\s\S]*?)\n```/g)].map((match) => match[1].trim()).filter(Boolean);
-  const phrases = commonLine ? commonLine[1].replace(/[。.;；]\s*$/, "").split(/[、,，]/).map((item) => item.trim()).filter(Boolean) : [];
-  const name = frontmatterName || (titleMatch ? titleMatch[1].trim() : fileName.replace(/\.(chat-memory\.)?skill$/i, ""));
-  const userId = frontmatterUserId || (userMatch ? userMatch[1] : "-");
-  const id = stableId || `${userId !== "-" ? userId : name}-${Math.random().toString(16).slice(2)}`;
+function normalizePersona(skill) {
+  const name = String(skill.name || skill.file_name || "未命名对象").trim();
+  const userId = String(skill.userId || "-").trim() || "-";
+  const id = String(skill.id || `${userId}-${Math.random().toString(16).slice(2)}`);
   return {
     id,
     name,
     userId,
-    memoryAware: text.includes("## 记忆检索"),
-    phrases,
-    samples,
-    raw: text
+    memoryAware: Boolean(skill.memoryAware),
+    phrases: Array.isArray(skill.phrases) ? skill.phrases : [],
+    sampleCount: Number.isFinite(Number(skill.sampleCount)) ? Number(skill.sampleCount) : 0
   };
 }
 
@@ -134,7 +112,7 @@ function renderInspector() {
   const memory = state.runtime.memory || {};
   els.modeValue.textContent = persona ? (persona.memoryAware ? "记忆陪伴" : "风格陪伴") : "未加载";
   els.userIdValue.textContent = persona ? persona.userId : "-";
-  els.sampleCountValue.textContent = persona ? String(persona.samples.length) : "0";
+  els.sampleCountValue.textContent = persona ? String(persona.sampleCount) : "0";
   els.memoryCountValue.textContent = memory.configured ? memory.backend : "未接入";
   const title = persona ? persona.name : "智能陪伴";
   els.appTitle.textContent = title;
@@ -142,7 +120,7 @@ function renderInspector() {
   document.title = title;
   els.conversationTitle.textContent = persona ? persona.name : "加载 skill 后开始对话";
   els.conversationSub.textContent = persona
-    ? `已配置 ${persona.samples.length} 条风格样本`
+    ? `已配置 ${persona.sampleCount} 条风格样本`
     : "请在启动服务时通过 --skill 指定陪伴对象";
   els.typingStatus.hidden = true;
   els.styleTokens.innerHTML = "";
@@ -262,7 +240,7 @@ async function sendMessage(input) {
         provider: els.providerSelect.value,
         model: els.modelInput.value.trim(),
         message: input,
-        skill: persona.raw,
+        skill_id: persona.id,
         persona: { name: persona.name, userId: persona.userId },
         history
       })
@@ -317,7 +295,7 @@ async function loadServerSkills() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
     const skills = Array.isArray(payload.skills) ? payload.skills : [];
-    state.personas = skills.map((skill) => parseSkill(skill.text || "", skill.file_name || "skill", skill.id || ""));
+    state.personas = skills.map((skill) => normalizePersona(skill));
     state.activeId = state.personas[0] ? state.personas[0].id : "";
     renderPersonas();
     if (state.personas.length) {

@@ -15,7 +15,7 @@ from wechat_skill_distill.model_client import build_companion_prompt, build_reca
 from wechat_skill_distill.redaction import redact_weflow_export
 from wechat_skill_distill.skills import generate_skill_texts, write_skill_files
 from wechat_skill_distill.weflow import load_weflow_messages
-from wechat_skill_distill.web_server import build_enriched_chat_payload, load_skill_assets, web_root
+from wechat_skill_distill.web_server import build_enriched_chat_payload, load_skill_assets, public_skill_assets, resolve_preloaded_skill_payload, web_root
 
 
 class MockResponse:
@@ -280,6 +280,48 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertEqual(assets[0]["file_name"], "Participant A.chat-memory.skill")
         self.assertIn("Participant A Chat Skill", assets[0]["text"])
 
+    def test_public_skill_assets_hide_raw_skill_text(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "A.chat-memory.skill"
+            path.write_text(
+                '---\nname: chat-user-user-a\nuser_id: "user-a"\ndisplay_name: "Participant A"\n---\n'
+                "# Participant A Chat Skill\n\n## 记忆检索\n\n## 说话风格画像\n\n- 常见表达：可以、哈哈。\n\n"
+                "## 真实样本\n\n```text\n这是不应发送到浏览器的完整样本\n```\n",
+                encoding="utf-8",
+            )
+            assets = load_skill_assets([path])
+
+        public = public_skill_assets(assets)
+
+        self.assertEqual(public[0]["id"], "server-skill-1")
+        self.assertEqual(public[0]["name"], "Participant A")
+        self.assertEqual(public[0]["userId"], "user-a")
+        self.assertTrue(public[0]["memoryAware"])
+        self.assertEqual(public[0]["sampleCount"], 1)
+        self.assertEqual(public[0]["phrases"], ["可以", "哈哈"])
+        self.assertNotIn("text", public[0])
+        self.assertNotIn("raw", json.dumps(public, ensure_ascii=False))
+        self.assertNotIn("这是不应发送到浏览器的完整样本", json.dumps(public, ensure_ascii=False))
+
+    def test_chat_payload_resolves_preloaded_skill_server_side(self) -> None:
+        assets = [
+            {
+                "id": "server-skill-1",
+                "file_name": "A.chat-memory.skill",
+                "text": '---\nuser_id: "user-a"\ndisplay_name: "Participant A"\n---\n# Participant A Chat Skill\n\n真实 skill 内容',
+            }
+        ]
+        payload = {
+            "skill_id": "server-skill-1",
+            "skill": "# Forged Skill",
+            "persona": {"name": "Forged", "userId": "forged-user"},
+        }
+
+        resolved = resolve_preloaded_skill_payload(payload, assets)
+
+        self.assertIn("真实 skill 内容", resolved["skill"])
+        self.assertEqual(resolved["persona"], {"name": "Participant A", "userId": "user-a"})
+
     def test_evaluate_skills_reports_pass_and_identity_leakage(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -540,6 +582,15 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("模型请求前必须过滤明确属于其他 userID 的 memory hits", prd)
         self.assertIn("过滤只基于 metadata、participants 和 user:<id> tags", prd)
 
+    def test_docs_keep_raw_skill_server_side(self) -> None:
+        readme = Path("README.md").read_text(encoding="utf-8")
+        prd = Path("PRD.md").read_text(encoding="utf-8")
+
+        self.assertIn("浏览器只接收 persona 摘要和 skill_id，不接收完整 skill 文本", readme)
+        self.assertIn("聊天请求只提交 skill_id", readme)
+        self.assertIn("完整 skill 文本只保存在本地服务端", prd)
+        self.assertIn("浏览器不得接收或回传 raw skill 文本", prd)
+
     def test_docs_describe_safe_skill_artifact_identity_metadata(self) -> None:
         readme = Path("README.md").read_text(encoding="utf-8")
         prd = Path("PRD.md").read_text(encoding="utf-8")
@@ -676,10 +727,13 @@ class ToolkitCoreTest(unittest.TestCase):
         for private_name in ["肖明浩", "胡翔川", "牧之", "661", "662", "Skill Companion Lab"]:
             self.assertNotIn(private_name, source)
         self.assertIn("persona.name", source)
-        self.assertIn("frontmatterValue", source)
-        self.assertIn("display_name", source)
-        self.assertIn("user_id", source)
-        self.assertIn("已配置 ${persona.samples.length} 条风格样本", source)
+        self.assertIn("normalizePersona", source)
+        self.assertIn("persona.sampleCount", source)
+        self.assertIn("skill_id: persona.id", source)
+        self.assertIn("已配置 ${persona.sampleCount} 条风格样本", source)
+        self.assertNotIn("persona.raw", source)
+        self.assertNotIn("parseSkill", source)
+        self.assertNotIn("frontmatterValue", source)
         self.assertNotIn("组场景示例", source)
         self.assertNotIn("后台模型未配置", source)
 
@@ -692,6 +746,8 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertNotIn("keywordSet", source)
         self.assertNotIn("memory_hits:", source)
         self.assertNotIn("记忆 JSONL", source)
+        self.assertNotIn("skill: persona.raw", source)
+        self.assertNotIn("raw: text", source)
         self.assertIn("记忆由本地服务端按配置检索", source)
 
     def test_chat_server_ignores_client_memory_hits_by_default(self) -> None:

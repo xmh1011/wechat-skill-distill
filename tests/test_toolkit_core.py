@@ -428,12 +428,15 @@ class ToolkitCoreTest(unittest.TestCase):
                 "WSD_OPENAI_API_KEY": "secret",
                 "WSD_OPENAI_MODEL": "deepseek-v4-flash",
                 "WSD_MODEL_PROVIDER": "openai",
+                "WSD_OPENAI_BASE_URL": "https://internal-model-gateway.example.test/v1",
             }
         )
 
         self.assertEqual(report["default_provider"], "openai")
         self.assertTrue(report["providers"][0]["configured"])
         self.assertNotIn("secret", json.dumps(report))
+        self.assertNotIn("base_url", report["providers"][0])
+        self.assertNotIn("internal-model-gateway", json.dumps(report))
 
     def test_companion_prompt_includes_skill_and_memory_constraints(self) -> None:
         prompt = build_companion_prompt(
@@ -639,6 +642,8 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("完整 skill 文本只保存在本地服务端", prd)
         self.assertIn("浏览器不得接收或回传 raw skill 文本", prd)
         self.assertIn("浏览器不得接收本地 skill 文件名", prd)
+        self.assertIn("模型 base URL 和 API key 只保留在本地服务端", readme)
+        self.assertIn("浏览器不得接收模型 base URL", prd)
 
     def test_docs_require_shared_skill_metadata_parser(self) -> None:
         readme = Path("README.md").read_text(encoding="utf-8")

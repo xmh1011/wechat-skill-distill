@@ -32,7 +32,6 @@ class ProviderConfig:
         return {
             "provider": self.provider,
             "model": self.model,
-            "base_url": self.base_url,
             "configured": bool(self.api_key and self.model),
         }
 

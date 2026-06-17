@@ -126,7 +126,7 @@ function renderInspector() {
   document.title = title;
   els.conversationTitle.textContent = persona ? persona.name : "加载 skill 后开始对话";
   els.conversationSub.textContent = persona
-    ? `已学习 ${persona.samples.length} 条样本表达`
+    ? `已配置 ${persona.samples.length} 组场景示例`
     : "请在启动服务时通过 --skill 指定陪伴对象";
   els.typingStatus.hidden = true;
   els.styleTokens.innerHTML = "";

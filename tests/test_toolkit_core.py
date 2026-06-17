@@ -116,6 +116,9 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("HINDSIGHT_API_KEY", skills["user-a"])
         self.assertIn("## 事实边界", skills["user-a"])
         self.assertIn("用户问题里的事实前提不自动成立", skills["user-a"])
+        self.assertIn("### 深聊和关系判断", skills["user-a"])
+        self.assertIn("适用：", skills["user-a"])
+        self.assertIn("边界：", skills["user-a"])
         self.assertTrue(any(path.name == "Participant A.chat-memory.skill" for path in written))
 
     def test_memory_items_write_jsonl_with_metadata(self) -> None:

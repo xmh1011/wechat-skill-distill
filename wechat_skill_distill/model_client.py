@@ -174,7 +174,7 @@ def build_recall_query_planner_prompt() -> str:
 
 def generate_recall_query_variants(payload: Mapping[str, Any], env: Mapping[str, str] | None = None) -> list[str]:
     current_env = env or os.environ
-    requested_provider = str(payload.get("provider") or _env(current_env, "WSD_MODEL_PROVIDER", "MODEL_PROVIDER", default="openai"))
+    requested_provider = _requested_provider(payload, current_env)
     config = provider_config(requested_provider, current_env)
     if not config.api_key or not config.model:
         return []
@@ -270,6 +270,18 @@ def _allow_client_model_override(env: Mapping[str, str]) -> bool:
     return _env(env, "WSD_ALLOW_CLIENT_MODEL_OVERRIDE", "ALLOW_CLIENT_MODEL_OVERRIDE", default="").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _allow_client_provider_override(env: Mapping[str, str]) -> bool:
+    return _env(env, "WSD_ALLOW_CLIENT_PROVIDER_OVERRIDE", "ALLOW_CLIENT_PROVIDER_OVERRIDE", default="").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _requested_provider(payload: Mapping[str, Any], env: Mapping[str, str]) -> str:
+    if _allow_client_provider_override(env):
+        client_provider = str(payload.get("provider") or "").strip()
+        if client_provider:
+            return client_provider
+    return _env(env, "WSD_MODEL_PROVIDER", "MODEL_PROVIDER", default="openai")
+
+
 def _call_text_model(
     config: ProviderConfig,
     system_prompt: str,
@@ -349,7 +361,7 @@ def _call_text_model(
 
 def generate_chat_reply(payload: Mapping[str, Any], env: Mapping[str, str] | None = None) -> dict[str, Any]:
     current_env = env or os.environ
-    requested_provider = str(payload.get("provider") or _env(current_env, "WSD_MODEL_PROVIDER", "MODEL_PROVIDER", default="openai"))
+    requested_provider = _requested_provider(payload, current_env)
     config = provider_config(requested_provider, current_env)
     model_override = str(payload.get("model") or "").strip()
     if model_override and _allow_client_model_override(current_env):

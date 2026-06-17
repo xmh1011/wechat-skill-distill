@@ -65,6 +65,7 @@ function renderProviders() {
     els.providerSelect.appendChild(option);
   }
   els.providerSelect.value = state.runtime.default_provider || providers[0].provider;
+  els.providerSelect.disabled = true;
   syncModelInput();
   renderRuntimeStatus();
 }
@@ -83,8 +84,8 @@ function renderRuntimeStatus() {
     ? "陪伴服务已连接"
     : "服务未配置";
   els.modelHint.textContent = ready
-    ? "请求会从本地服务端转发，浏览器不保存 API key；记忆由本地服务端按配置检索。"
-    : "请在 .env 中配置对应 provider 的 API key 和 model；记忆由本地服务端按配置检索。";
+    ? "模型协议、模型和 API key 由本地服务端环境变量决定；记忆由本地服务端按配置检索。"
+    : "请在 .env 中配置服务端 provider、API key 和 model；记忆由本地服务端按配置检索。";
   renderStatePills();
 }
 
@@ -301,7 +302,6 @@ async function sendMessage(input) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        provider: els.providerSelect.value,
         message: input,
         skill_id: personaId,
         persona: { name: persona.name, userId: persona.userId },

@@ -677,9 +677,12 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("模型 base URL 和 API key 只保留在本地服务端", readme)
         self.assertIn("浏览器不得接收模型 base URL", prd)
         self.assertIn("浏览器不提交模型覆盖字段", readme)
+        self.assertIn("浏览器不提交 provider 覆盖字段", readme)
         self.assertIn("默认不得接受浏览器传入的 model 覆盖", prd)
+        self.assertIn("默认不得接受浏览器传入的 provider 覆盖", prd)
         self.assertIn("默认不向浏览器返回 provider 或 memory 的原始错误细节", readme)
         self.assertIn("默认不得向浏览器返回 provider/memory 原始错误细节", prd)
+        self.assertIn("WSD_ALLOW_CLIENT_PROVIDER_OVERRIDE=0", env_example)
         self.assertIn("WSD_ALLOW_CLIENT_MODEL_OVERRIDE=0", env_example)
         self.assertIn("WSD_DEBUG_ERRORS=0", env_example)
 
@@ -912,6 +915,7 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("persona.sampleCount", source)
         self.assertIn("skill_id: personaId", source)
         self.assertNotIn("model: els.modelInput.value", source)
+        self.assertIn("els.providerSelect.disabled = true", source)
         self.assertIn("已配置 ${persona.sampleCount} 条风格样本", source)
         self.assertNotIn("persona.raw", source)
         self.assertNotIn("parseSkill", source)
@@ -954,6 +958,7 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("setRecallForPersona(personaId", send_source)
         self.assertIn("transcriptForPersona(personaId).push", send_source)
         self.assertNotIn("activeTranscript().push({\n      role: \"assistant\"", send_source)
+        self.assertNotIn("provider: els.providerSelect.value", send_source)
 
     def test_chat_server_ignores_client_memory_hits_by_default(self) -> None:
         payload = {
@@ -1088,6 +1093,34 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertEqual(reply["model"], "client-picked-model")
         self.assertEqual(post.call_args.kwargs["json"]["model"], "client-picked-model")
 
+    def test_chat_provider_override_is_server_side_opt_in(self) -> None:
+        payload = {
+            "provider": "anthropic",
+            "message": "周末要不要出去？",
+            "skill": "## 说话风格画像\n- 常见表达：可以。",
+        }
+        env = {
+            "WSD_MODEL_PROVIDER": "openai",
+            "WSD_OPENAI_API_KEY": "openai-secret",
+            "WSD_OPENAI_MODEL": "openai-server-model",
+            "WSD_OPENAI_BASE_URL": "https://oneapi.example.test/v1",
+            "WSD_ANTHROPIC_API_KEY": "anthropic-secret",
+            "WSD_ANTHROPIC_MODEL": "anthropic-client-model",
+        }
+        with patch("wechat_skill_distill.model_client.requests.post") as post:
+            post.return_value = MockResponse({"choices": [{"message": {"content": "可以"}}]})
+            reply = generate_chat_reply(payload, env=env)
+
+        self.assertEqual(reply["provider"], "openai")
+        self.assertEqual(post.call_args.args[0], "https://oneapi.example.test/v1/chat/completions")
+
+        with patch("wechat_skill_distill.model_client.requests.post") as post:
+            post.return_value = MockResponse({"content": [{"type": "text", "text": "嗯，可以"}]})
+            reply = generate_chat_reply(payload, env={**env, "WSD_ALLOW_CLIENT_PROVIDER_OVERRIDE": "1"})
+
+        self.assertEqual(reply["provider"], "anthropic")
+        self.assertEqual(post.call_args.args[0], "https://api.anthropic.com/v1/messages")
+
     def test_openai_recall_query_planner_outputs_json_queries(self) -> None:
         with patch("wechat_skill_distill.model_client.requests.post") as post:
             post.return_value = MockResponse({"choices": [{"message": {"content": '["Participant A userID=user-a 学校 本科 专业", "Participant A userID=user-a 求学 经历"]'}}]})
@@ -1144,6 +1177,7 @@ class ToolkitCoreTest(unittest.TestCase):
             reply = generate_chat_reply(
                 {"provider": "anthropic", "message": "怎么安排？", "skill": "## 说话风格画像\n- 短句。"},
                 env={
+                    "WSD_MODEL_PROVIDER": "anthropic",
                     "WSD_ANTHROPIC_API_KEY": "secret",
                     "WSD_ANTHROPIC_MODEL": "claude-sonnet-test",
                 },
@@ -1163,6 +1197,7 @@ class ToolkitCoreTest(unittest.TestCase):
             reply = generate_chat_reply(
                 {"provider": "gemini", "message": "今晚聊会儿？", "skill": "## 说话风格画像\n- 常见表达：可以。"},
                 env={
+                    "WSD_MODEL_PROVIDER": "gemini",
                     "WSD_GEMINI_API_KEY": "secret",
                     "WSD_GEMINI_MODEL": "gemini-test",
                 },

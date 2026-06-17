@@ -70,7 +70,7 @@ def memory_runtime_status(env: Mapping[str, str] | None = None) -> dict[str, Any
     elif backend == "generic-http":
         configured = bool(generic_url)
     elif backend == "mem0":
-        configured = bool(mem0_key or _env(current_env, "MEM0_ORG_ID", "MEM0_PROJECT_ID") or backend)
+        configured = bool(mem0_key)
     elif backend == "jsonl":
         configured = bool(jsonl_path)
     return {

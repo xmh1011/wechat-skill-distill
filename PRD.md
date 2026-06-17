@@ -125,13 +125,13 @@ wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765 --env-file .env
 
 要求：
 
-- 页面能加载一个或多个 `.skill` / `.chat-memory.skill` 文件。
-- 页面能加载本地 `memory.jsonl` 并在回复时展示命中结果。
+- 页面能通过服务启动参数预加载一个或多个 `.skill` / `.chat-memory.skill` 文件。
+- 页面不上传本地记忆文件、不展示 raw memory hits；记忆由服务端 runtime recall 后端检索并注入模型上下文。
 - 页面提供 persona 选择、模型协议选择、聊天窗口、输入框、转录导出。
 - 页面通过本地 server-side proxy 调用模型，浏览器不保存或发送 API key。
 - MVP 支持 OpenAI-compatible chat completions、Anthropic Messages API、Gemini generateContent。
 - 输入框支持 `Enter` 发送、`Shift+Enter` 换行。
-- 后续版本支持真实云记忆 recall 和流式输出。
+- 后续版本支持流式输出和更完整的记忆质量诊断。
 
 ## 5. 信息架构
 
@@ -220,7 +220,7 @@ wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765 --env-file .env
 - Hindsight contract 包含 bank、types、tags、conversation tag。
 - Mem0 contract 包含 user_id、metadata、source 和 conversation_id。
 - Generic HTTP contract 包含 request/response schema 建议。
-- JSONL contract 说明宿主 agent 需要先做本地检索再注入上下文。
+- JSONL contract 说明宿主运行时或 agent 需要从 JSONL 文件、索引或服务端 recall adapter 检索后再注入上下文。
 
 ### FR7 用户体验
 
@@ -378,5 +378,5 @@ wechat-skill-distill init --wizard
 
 - 不破解微信、不绕过平台安全机制、不自动获取聊天记录。
 - 不训练或微调模型。
-- 不保证云记忆服务 API 永远兼容，adapter 需要按后端版本维护。
+- 不保证云端记忆后端 API 永远兼容，adapter 需要按后端版本维护。
 - 不把模拟聊天内容当事实来源。

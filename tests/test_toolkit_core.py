@@ -137,6 +137,7 @@ class ToolkitCoreTest(unittest.TestCase):
 
             mem0_skill = generate_skill_texts(messages, include_memory=True, memory_backend="mem0")["user-a"]
             generic_skill = generate_skill_texts(messages, include_memory=True, memory_backend="generic-http")["user-a"]
+            jsonl_skill = generate_skill_texts(messages, include_memory=True, memory_backend="jsonl")["user-a"]
 
         self.assertIn("client.search", mem0_skill)
         self.assertIn("user_id：当前 skill 对应的 userID", mem0_skill)
@@ -144,6 +145,8 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("MEMORY_RECALL_URL", generic_skill)
         self.assertIn("请求字段建议：`query`、`queries`、`user_id`、`persona`、`history`、`tags`、`limit`、`max_tokens`", generic_skill)
         self.assertIn("不要在 skill 或代码里维护固定领域词表", generic_skill)
+        self.assertIn("宿主运行时或 agent", jsonl_skill)
+        self.assertNotIn("宿主 agent 先在 JSONL", jsonl_skill)
 
     def test_memory_items_write_jsonl_with_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -290,7 +293,8 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("不要编造", prompt)
         self.assertIn("事实不是风格", prompt)
         self.assertIn("用户问题里的事实前提不自动成立", prompt)
-        self.assertIn("命中由云记忆服务按相关性返回，本地不重排", prompt)
+        self.assertIn("命中由记忆后端按自身策略返回，本地不重排", prompt)
+        self.assertNotIn("云记忆服务", prompt)
         self.assertIn("先通读全部命中", prompt)
         self.assertIn("只能引用记忆命中里的直接陈述", prompt)
 
@@ -424,6 +428,23 @@ class ToolkitCoreTest(unittest.TestCase):
 
         self.assertEqual(hits, [])
         post.assert_not_called()
+
+    def test_mem0_runtime_status_requires_configuration(self) -> None:
+        missing = memory_runtime_status({"WSD_MEMORY_RECALL_BACKEND": "mem0"})
+        configured = memory_runtime_status({"WSD_MEMORY_RECALL_BACKEND": "mem0", "MEM0_API_KEY": "secret"})
+
+        self.assertEqual(missing["backend"], "mem0")
+        self.assertFalse(missing["configured"])
+        self.assertTrue(configured["configured"])
+
+    def test_prd_keeps_chat_ui_memory_recall_server_side(self) -> None:
+        text = Path("PRD.md").read_text(encoding="utf-8")
+
+        self.assertIn("前端不上传记忆文件、不做浏览器侧检索", text)
+        self.assertIn("JSONL 记忆通过服务端 `JSONL_MEMORY_PATH` 接入", text)
+        self.assertNotIn("页面能加载本地 `memory.jsonl` 并在回复时展示命中结果", text)
+        self.assertNotIn("本地检索结果和服务端 recall 结果", text)
+        self.assertNotIn("JSONL contract 说明宿主 agent 需要先做本地检索再注入上下文", text)
 
     def test_generic_http_recall_backend_uses_common_runtime_contract(self) -> None:
         with patch("wechat_skill_distill.memory_recall.requests.post") as post:

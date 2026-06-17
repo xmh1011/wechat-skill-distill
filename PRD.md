@@ -269,9 +269,10 @@ wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765 --env-file .env
 - 前端不提供 skill 文件选择入口；persona 来自服务端启动参数。
 - 完整 skill 文本只保存在本地服务端；浏览器不得接收或回传 raw skill 文本。
 - 浏览器不得接收本地 skill 文件名，展示名必须来自服务端解析后的 persona metadata。
+- 浏览器不得接收 user_id，user_id 只在服务端解析、召回和评估链路使用。
 - 浏览器不得接收常见表达短语，风格样本和表达线索只保存在服务端 prompt 注入链路。
 - `/api/skills` 只返回 persona 摘要和 `skill_id`，`/api/chat` 根据 `skill_id` 在服务端解析并注入完整 skill。
-- 服务端 public persona 摘要和 evaluate-skills 必须复用同一套 skill metadata parser，避免 UI 展示名、userID 和评估报告不一致；metadata parser 只读取文件开头 frontmatter block。
+- 服务端 public persona 摘要和 evaluate-skills 必须复用同一套 skill metadata parser，避免 UI 展示名和评估报告不一致；public 摘要不得返回 user_id；metadata parser 只读取文件开头 frontmatter block。
 - 多 persona UI 必须按 skill_id 隔离 transcript 和 recall 状态，切换对象时不得把上一位对象的 history 传给下一位。
 - 前端不上传记忆文件、不做浏览器侧检索；JSONL 记忆通过服务端 `JSONL_MEMORY_PATH` 接入。
 - 支持 backend-neutral server-side recall：`/api/chat` 可通过 Hindsight、Generic HTTP、Mem0 或 JSONL 在模型调用前自动检索相关记忆。

@@ -295,12 +295,13 @@ class ToolkitCoreTest(unittest.TestCase):
 
         self.assertEqual(public[0]["id"], "server-skill-1")
         self.assertEqual(public[0]["name"], "Participant A")
-        self.assertEqual(public[0]["userId"], "user-a")
+        self.assertNotIn("userId", public[0])
         self.assertTrue(public[0]["memoryAware"])
         self.assertEqual(public[0]["sampleCount"], 1)
         self.assertNotIn("phrases", public[0])
         self.assertNotIn("text", public[0])
         self.assertNotIn("file_name", public[0])
+        self.assertNotIn("user-a", json.dumps(public, ensure_ascii=False))
         self.assertNotIn("raw", json.dumps(public, ensure_ascii=False))
         self.assertNotIn("A.chat-memory.skill", json.dumps(public, ensure_ascii=False))
         self.assertNotIn("这是不应发送到浏览器的完整样本", json.dumps(public, ensure_ascii=False))
@@ -324,8 +325,8 @@ class ToolkitCoreTest(unittest.TestCase):
 
         self.assertEqual(public[0]["name"], 'A "quoted": Persona')
         self.assertEqual(report["skills"][0]["name"], 'A "quoted": Persona')
-        self.assertEqual(public[0]["userId"], "team/a 01")
         self.assertEqual(report["skills"][0]["user_id"], "team/a 01")
+        self.assertNotIn("userId", public[0])
 
     def test_skill_metadata_parser_ignores_body_lines_that_look_like_frontmatter(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -349,8 +350,8 @@ class ToolkitCoreTest(unittest.TestCase):
 
         self.assertEqual(public[0]["name"], "Legacy Title")
         self.assertEqual(report["skills"][0]["name"], "Legacy Title")
-        self.assertEqual(public[0]["userId"], "legacy-user")
         self.assertEqual(report["skills"][0]["user_id"], "legacy-user")
+        self.assertNotIn("userId", public[0])
 
     def test_chat_payload_resolves_preloaded_skill_server_side(self) -> None:
         assets = [
@@ -681,11 +682,13 @@ class ToolkitCoreTest(unittest.TestCase):
 
         self.assertIn("浏览器只接收 persona 摘要和 skill_id，不接收完整 skill 文本", readme)
         self.assertIn("也不接收本地 skill 文件名", readme)
+        self.assertIn("不接收 user_id", readme)
         self.assertIn("不接收常见表达短语", readme)
         self.assertIn("聊天请求只提交 skill_id", readme)
         self.assertIn("完整 skill 文本只保存在本地服务端", prd)
         self.assertIn("浏览器不得接收或回传 raw skill 文本", prd)
         self.assertIn("浏览器不得接收本地 skill 文件名", prd)
+        self.assertIn("浏览器不得接收 user_id", prd)
         self.assertIn("浏览器不得接收常见表达短语", prd)
         self.assertIn("模型 base URL 和 API key 只保留在本地服务端", readme)
         self.assertIn("浏览器不得接收模型 base URL", prd)
@@ -703,10 +706,12 @@ class ToolkitCoreTest(unittest.TestCase):
         readme = Path("README.md").read_text(encoding="utf-8")
         prd = Path("PRD.md").read_text(encoding="utf-8")
 
-        self.assertIn("前端摘要和评估报告使用同一套 skill metadata 解析规则", readme)
-        self.assertIn("优先使用 frontmatter 的 display_name 和 user_id", readme)
+        self.assertIn("服务端 persona 摘要和评估报告使用同一套 skill metadata 解析规则", readme)
+        self.assertIn("优先使用 frontmatter 的 display_name", readme)
+        self.assertIn("user_id 只在服务端解析、召回和评估链路使用", readme)
         self.assertIn("只解析文件开头的 frontmatter block", readme)
         self.assertIn("服务端 public persona 摘要和 evaluate-skills 必须复用同一套 skill metadata parser", prd)
+        self.assertIn("public 摘要不得返回 user_id", prd)
         self.assertIn("metadata parser 只读取文件开头 frontmatter block", prd)
 
     def test_docs_describe_persona_scoped_chat_sessions(self) -> None:
@@ -927,6 +932,10 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("normalizePersona", source)
         self.assertIn("persona.sampleCount", source)
         self.assertIn("skill_id: personaId", source)
+        self.assertNotIn("角色 ID", source)
+        self.assertNotIn("userIdValue", source)
+        self.assertNotIn("persona.userId", source)
+        self.assertNotIn("userId:", source)
         self.assertNotIn("model: els.modelInput.value", source)
         self.assertNotIn("persona.phrases", source)
         self.assertIn("els.providerSelect.disabled = true", source)

@@ -13,7 +13,6 @@ const els = {
   modelHint: document.getElementById("modelHint"),
   personaSelect: document.getElementById("personaSelect"),
   modeValue: document.getElementById("modeValue"),
-  userIdValue: document.getElementById("userIdValue"),
   sampleCountValue: document.getElementById("sampleCountValue"),
   memoryCountValue: document.getElementById("memoryCountValue"),
   styleTokens: document.getElementById("styleTokens"),
@@ -35,12 +34,10 @@ const els = {
 
 function normalizePersona(skill) {
   const name = String(skill.name || "未命名对象").trim();
-  const userId = String(skill.userId || "-").trim() || "-";
-  const id = String(skill.id || `${userId}-${Math.random().toString(16).slice(2)}`);
+  const id = String(skill.id || `persona-${Math.random().toString(16).slice(2)}`);
   return {
     id,
     name,
-    userId,
     memoryAware: Boolean(skill.memoryAware),
     sampleCount: Number.isFinite(Number(skill.sampleCount)) ? Number(skill.sampleCount) : 0
   };
@@ -148,7 +145,6 @@ function renderInspector() {
   const persona = activePersona();
   const memory = state.runtime.memory || {};
   els.modeValue.textContent = persona ? (persona.memoryAware ? "记忆陪伴" : "风格陪伴") : "未加载";
-  els.userIdValue.textContent = persona ? persona.userId : "-";
   els.sampleCountValue.textContent = persona ? String(persona.sampleCount) : "0";
   els.memoryCountValue.textContent = memory.configured ? memory.backend : "未接入";
   const title = persona ? persona.name : "智能陪伴";
@@ -239,7 +235,7 @@ function updateMessage(node, text, options = {}) {
 function exportTranscript() {
   const persona = activePersona();
   const payload = {
-    persona: persona ? { id: persona.id, name: persona.name, userId: persona.userId } : null,
+    persona: persona ? { id: persona.id, name: persona.name } : null,
     transcript: activeTranscript()
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
@@ -300,7 +296,6 @@ async function sendMessage(input) {
       body: JSON.stringify({
         message: input,
         skill_id: personaId,
-        persona: { name: persona.name, userId: persona.userId },
         history
       })
     });

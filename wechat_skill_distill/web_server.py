@@ -44,7 +44,6 @@ def _skill_summary(asset: Mapping[str, str]) -> dict[str, Any]:
     return {
         "id": str(asset.get("id") or ""),
         "name": meta.name,
-        "userId": meta.user_id or "-",
         "memoryAware": meta.memory_aware,
         "sampleCount": meta.sample_count,
     }
@@ -63,11 +62,13 @@ def resolve_preloaded_skill_payload(payload: dict[str, Any], assets: list[dict[s
     selected = next((asset for asset in assets if asset.get("id") == skill_id), None)
     if not selected:
         raise ModelConfigError("requested skill_id is not loaded on this server")
-    summary = _skill_summary(selected)
+    text = selected.get("text") or ""
+    fallback_name = str(selected.get("file_name") or "skill").replace(".chat-memory.skill", "").replace(".skill", "")
+    meta = parse_skill_meta(text, fallback_name=fallback_name)
     return {
         **payload,
-        "skill": selected.get("text") or "",
-        "persona": {"name": summary["name"], "userId": summary["userId"]},
+        "skill": text,
+        "persona": {"name": meta.name, "userId": meta.user_id or "-"},
     }
 
 

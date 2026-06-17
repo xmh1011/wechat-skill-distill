@@ -29,10 +29,11 @@ class ProviderConfig:
 
     @property
     def public_dict(self) -> dict[str, Any]:
+        configured = bool(self.api_key and self.model)
         return {
             "provider": self.provider,
-            "model": self.model,
-            "configured": bool(self.api_key and self.model),
+            "model": self.model if configured else "",
+            "configured": configured,
         }
 
 

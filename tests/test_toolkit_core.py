@@ -438,6 +438,12 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertNotIn("base_url", report["providers"][0])
         self.assertNotIn("internal-model-gateway", json.dumps(report))
 
+    def test_runtime_status_hides_models_for_unconfigured_providers(self) -> None:
+        report = runtime_status({"MODEL_NAME": "ambient-model-name"})
+
+        self.assertFalse(any(provider["configured"] for provider in report["providers"]))
+        self.assertEqual([provider["model"] for provider in report["providers"]], ["", "", ""])
+
     def test_companion_prompt_includes_skill_and_memory_constraints(self) -> None:
         prompt = build_companion_prompt(
             {

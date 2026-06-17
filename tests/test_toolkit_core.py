@@ -478,6 +478,55 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertEqual(leaked_report["summary"]["failed"], 1)
         self.assertIn("contains other participant names", leaked_report["skills"][0]["issues"][0])
 
+    def test_evaluate_skills_warns_when_style_profile_is_too_thin(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "Thin.skill"
+            path.write_text(
+                '---\nname: chat-user-thin\nuser_id: "thin-user"\ndisplay_name: "Thin"\n---\n'
+                "# Thin Skill\n\n"
+                "## 目标\n\nx\n\n"
+                "## 使用时机\n\nx\n\n"
+                "## 说话风格画像\n\n- 常见表达：可以。\n\n"
+                "## 场景模板\n\nx\n\n"
+                "## 真实样本\n\n```text\n可以\n```\n\n"
+                "## 生成规则\n\nx\n\n"
+                "## 硬边界\n\nx\n\n"
+                "## 自检\n\nx\n",
+                encoding="utf-8",
+            )
+
+            report = evaluate_skills([path])
+
+        item = report["skills"][0]
+        self.assertTrue(item["passed"])
+        self.assertIn("style profile missing signals", item["warnings"][0])
+        self.assertEqual(
+            item["metrics"]["missing_style_signals"],
+            ["表达节奏", "问句占比", "多行消息占比", "表情/符号倾向"],
+        )
+
+    def test_evaluate_skills_accepts_generated_rich_style_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "chat.json"
+            out_dir = Path(tmp) / "skills"
+            path.write_text(json.dumps(self.sample_export(), ensure_ascii=False), encoding="utf-8")
+            messages = load_weflow_messages(
+                path,
+                participants={
+                    "0": {"user_id": "user-a", "name": "Participant A"},
+                    "1": {"user_id": "user-b", "name": "Participant B"},
+                },
+            )
+            skills = generate_skill_texts(messages, include_memory=False)
+            written = write_skill_files(skills, out_dir, suffix="skill")
+
+            report = evaluate_skills(written, messages=messages)
+
+        self.assertEqual(report["summary"]["failed"], 0)
+        for item in report["skills"]:
+            self.assertEqual(item["metrics"]["missing_style_signals"], [])
+            self.assertFalse(any("style profile missing signals" in warning for warning in item["warnings"]))
+
     def test_collect_skill_paths_deduplicates_chat_memory_suffix(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -749,6 +798,13 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("多行消息占比", text)
         self.assertIn("表情/符号倾向", text)
         self.assertIn("表达节奏", text)
+
+    def test_docs_describe_style_profile_quality_warnings(self) -> None:
+        readme = Path("README.md").read_text(encoding="utf-8")
+        prd = Path("PRD.md").read_text(encoding="utf-8")
+
+        self.assertIn("缺少表达节奏、问句占比、多行消息占比或表情/符号倾向时会给出 warning", readme)
+        self.assertIn("风格画像缺少表达节奏、问句占比、多行消息占比或表情/符号倾向时必须 warning", prd)
 
     def test_docs_keep_memory_backend_responsible_for_ranking(self) -> None:
         readme = Path("README.md").read_text(encoding="utf-8")

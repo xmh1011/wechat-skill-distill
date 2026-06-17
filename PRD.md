@@ -297,6 +297,7 @@ wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765 --env-file .env
 - 可选 `--input` + participant config，用原始聊天记录检查参与者名称混入和样本文本泄漏。
 - 检查 `.skill` 不能包含记忆检索章节或后端 key 名称。
 - 检查 `.chat-memory.skill` 必须包含 `## 记忆检索`。
+- 风格画像缺少表达节奏、问句占比、多行消息占比或表情/符号倾向时必须 warning。
 - 输出文本报告、`--json` 结构化报告，或 `--output` 保存 JSON。
 - 支持 `--fail-on-issue` 作为 CI/自动化质量门禁。
 

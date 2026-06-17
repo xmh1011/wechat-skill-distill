@@ -273,7 +273,7 @@ wechat-skill-distill evaluate-skills \
   --output reports/quality.json
 ```
 
-The evaluator checks required sections, style-only vs memory-aware file type rules, userID markers, participant-name leakage, and verbatim source text outside the sample section. Use `--fail-on-issue` in automation.
+The evaluator checks required sections, style-only vs memory-aware file type rules, userID markers, participant-name leakage, and verbatim source text outside the sample section. 缺少表达节奏、问句占比、多行消息占比或表情/符号倾向时会给出 warning，帮助识别过薄的风格画像。Use `--fail-on-issue` in automation.
 
 ## Safety
 

@@ -21,6 +21,7 @@ REQUIRED_SECTIONS = [
     "自检",
 ]
 MEMORY_TERMS = ["## 记忆检索", "HINDSIGHT_API_KEY", "MEM0_API_KEY", "MEMORY_API_KEY", "Hindsight", "Mem0"]
+STYLE_SIGNAL_TERMS = ["表达节奏", "问句占比", "多行消息占比", "表情/符号倾向"]
 
 
 @dataclass
@@ -120,12 +121,18 @@ def evaluate_skill_file(path: Path, *, messages: list[ChatMessage] | None = None
     if leaked_outside_samples:
         result.warnings.append(f"verbatim source text outside sample section: {len(leaked_outside_samples)}")
 
+    style_section = _section_text(text, "说话风格画像")
+    missing_style_signals = [term for term in STYLE_SIGNAL_TERMS if term not in style_section]
+    if missing_style_signals:
+        result.warnings.append(f"style profile missing signals: {', '.join(missing_style_signals)}")
+
     sample_count = len(re.findall(r"```text\n[\s\S]*?\n```", sample_section))
     result.metrics = {
         "character_count": len(text),
         "required_sections_present": sum(1 for section in REQUIRED_SECTIONS if f"## {section}" in text),
         "sample_count": sample_count,
         "other_name_hits": other_name_hits,
+        "missing_style_signals": missing_style_signals,
     }
     if sample_count == 0:
         result.warnings.append("no fenced text samples found")

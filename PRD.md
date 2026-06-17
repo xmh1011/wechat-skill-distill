@@ -1,130 +1,308 @@
 # wechat-skill-distill PRD
 
-## 背景
+## 1. 产品定位
 
-用户希望把 WeFlow 等工具导出的微信私聊记录转成可复用的 agent 资产：一方面提炼每个聊天参与者的说话风格 skill，另一方面把原始聊天记录导入长期记忆库，再生成能在对话时检索记忆的 chat skill。
+`wechat-skill-distill` 是一个本地优先的聊天记录资产化工具。它把 WeFlow 等工具导出的微信聊天记录转换成三类可复用资产：
 
-本版本按通用产品重新组织，不以任何单一记忆后端或特定聊天对象为中心。
+1. **纯说话风格 skill**：只描述某个参与者的语言风格，不依赖记忆库。
+2. **记忆数据包**：把原始聊天记录规范化后导入 JSONL、Hindsight、Mem0 或通用 HTTP 记忆后端。
+3. **带记忆检索的 chat skill**：在说话风格基础上声明 recall 规则，让 agent 必要时检索长期记忆。
 
-## 目标
+产品不是特定聊天对象、特定后端或单次导入脚本，而是一个可扩展 CLI/SDK。普通用户可以照 README 跑通，开发者可以接入新的聊天导出格式和新的记忆产品。
 
-在当前仓库中提供一套命令行工具和文档，使用户只需要准备聊天导出文件、配置 API 参数，就能完成：
+## 2. 调研结论
 
-1. 解析 WeFlow 微信聊天导出。
-2. 为每个参与者提炼独立的说话风格 skill。
-3. 将聊天记录导入 Hindsight、Mem0 或通用 HTTP/JSONL 记忆后端。
-4. 生成结合记忆检索约定的 chat skill。
-5. 按 README 引导完成安装、配置、试跑、导入和产物检查。
+### 2.1 聊天导出与转换社区
 
-## 非目标
+- `wechat-exporter` 的启发：导出工具需要把微信历史转成标准 JSON，并明确平台限制和安装步骤。我们的产品不做微信客户端破解或导出，只消费用户已经合法取得的导出文件。
+- `chat-history-manager` 的启发：聊天数据工具应采用 parser/generator 架构，支持多来源、多目标转换，而不是把数据格式写死在单个脚本里。
+- `WeClone` 的启发：从聊天记录生成“数字分身”时，用户最关心的是风格一致性、身份边界和使用风险。我们的 MVP 不做模型微调，但需要沉淀可解释的风格 skill 和后续评测能力。
 
-- 不内置破解、绕过或自动化微信客户端导出能力。
-- 不替用户申请或管理第三方记忆库账号。
-- 不保证所有第三方记忆库私有部署 API 完全一致；通过适配器和通用 HTTP 配置覆盖差异。
-- 不把模拟聊天结果当作原始事实，只作为验证 chat skill 行为的辅助工具。
+### 2.2 记忆系统社区
 
-## 用户角色
+- `Mem0` 的启发：记忆产品通常同时提供本地库、自托管和云服务路径，并围绕 user/session/agent 维度管理记忆；我们的 adapter 必须保留 user_id、timestamp、tags、participants 等关键字段。
+- `LangMem` 的启发：长期记忆不只是存储，还包括从对话中抽取事实、更新行为提示、热路径搜索和后台整理；我们的路线图需要支持 memory extraction、consolidation、recall policy。
+- `Graphiti` 的启发：对真实世界聊天，时间、关系变化和来源 provenance 很关键；我们的 MemoryItem 必须保留 timestamp、source、participant、原文片段和可追踪 metadata。
 
-- **普通用户**：有 WeFlow 导出的 JSON 文件，希望生成两个角色 skill 并导入记忆库。
-- **Agent 开发者**：希望把某段聊天记录沉淀成可复用 memory/chat skill。
-- **记忆服务集成者**：希望把同一份聊天记录导入 Hindsight、Mem0 或内部记忆服务。
+## 3. 用户角色
 
-## 用户流程
+- **普通用户**：有微信聊天 JSON，想生成朋友、家人或自己的说话风格 skill。
+- **Agent 使用者**：想让 Codex、Claude Code、Cursor、OpenCode 等 agent 在角色扮演时按某人的风格回复。
+- **记忆服务集成者**：想把同一份聊天记录导入 Hindsight、Mem0、内部记忆服务或本地 JSONL。
+- **数据/产品开发者**：想扩展新的 parser、memory backend、评测规则或导出格式。
+- **隐私敏感用户**：需要先在本地 dry-run、审查产物，再决定是否上传到云端。
 
-### 流程 A：安装与配置
+## 4. 核心场景
 
-1. 克隆或进入仓库。
-2. 创建虚拟环境并安装依赖。
-3. 复制 `.env.example` 为 `.env`。
-4. 按需填写 Hindsight、Mem0 或通用 HTTP 参数；本地 JSONL dry-run 不需要云服务参数。
-5. 运行 `wechat-skill-distill doctor` 检查配置和输入文件。
+### S1 快速生成无记忆风格 skill
 
-### 流程 B：从聊天记录生成 skill
+用户拿到 WeFlow JSON 后运行：
 
-1. 用户使用 WeFlow 导出微信聊天 JSON。
-2. 运行 `wechat-skill-distill extract-skills --input <json> --out-dir skills/`.
-3. 工具按参与者拆分消息、统计表达特征、抽取真实示例、生成独立 skill。
-4. 用户得到每个参与者一个 `.chat-memory.skill` 文件。
+```bash
+wechat-skill-distill extract-skills --input chat.json --out-dir generated-skills --config config.local.json
+```
 
-### 流程 C：导入记忆库
+产物：
 
-1. 运行 `wechat-skill-distill import --backend <backend> --input <json> --config config/local.json`。
-2. 工具把聊天记录转成统一 `MemoryItem`。
-3. 后端适配器负责提交到目标记忆库。
-4. 支持 `--dry-run` 先输出 JSONL 和摘要，不调用远程服务。
+```text
+generated-skills/Participant A.skill
+generated-skills/Participant B.skill
+```
 
-### 流程 D：生成带记忆检索的 chat skill
+要求：
 
-1. 运行 `wechat-skill-distill generate-chat-skills --input <json> --memory-backend <backend> --out-dir skills/`.
-2. 工具在说话风格 skill 中加入对应记忆后端的 recall 约定。
-3. 产物默认不写入 API key，只引用环境变量。
+- 文件不包含 `## 记忆检索`、API key、memory backend 名称。
+- 每个参与者独立，不混入另一个人的姓名、身份或口头禅。
+- skill 能说明目标、使用时机、说话风格、真实样本、场景模板、硬边界、自检。
 
-## 功能需求
+### S2 导入记忆库
 
-### FR1 WeFlow 解析
+用户先本地 dry-run：
 
-- 支持读取 WeFlow JSON 中的 `messages`。
-- 支持文本消息和引用消息。
-- 支持通过 `isSend` 或用户名映射参与者。
-- 输出统一字段：`local_id`、`timestamp`、`date`、`sender_name`、`user_id`、`content`、`message_type`。
-- 支持过滤起止日期。
+```bash
+wechat-skill-distill import --backend jsonl --input chat.json --group-by message --output exports/memory.jsonl --dry-run --config config.local.json
+```
 
-### FR2 风格 skill 提炼
+确认 JSONL 后再切换到云服务：
 
-- 每个 userID 生成独立 skill 文件。
-- skill 不能混入另一个用户的姓名、身份或人格设定。
-- skill 包含：目标、使用时机、说话风格、常用语、场景模板、硬边界、自检。
-- 基于真实聊天记录统计：短句比例、常用词、表情/语气词、消息长度、话题样本。
-- 支持输出 memory-aware 版本：包含 Hindsight、Mem0 或通用 HTTP recall 约定。
+```bash
+wechat-skill-distill import --backend mem0 --input chat.json --group-by day --config config.local.json
+wechat-skill-distill import --backend hindsight --input chat.json --group-by day --config config.local.json
+```
 
-### FR3 记忆导入
+要求：
 
-- 统一内存模型：`MemoryItem(content, metadata, tags, timestamp, participants)`。
-- 支持后端：
-  - `hindsight`：调用 Hindsight bank memories API。
-  - `mem0`：优先使用已安装的 Mem0 Python client；未安装时给出明确安装提示。
-  - `jsonl`：本地 JSONL，作为通用离线交换格式。
-  - `generic-http`：按配置向任意 HTTP endpoint POST JSON payload。
-- 支持按 `message`、`day` 分组。
-- metadata 必须包含参与者 userID 和消息时间戳或分组起止时间。
-- 所有 API key 只能来自环境变量或本地配置，不能写入生成文件。
+- dry-run 不调用远程服务。
+- 每条 MemoryItem 至少包含 `content`、`metadata`、`timestamp`、`participants`、`tags`。
+- metadata 必须包含 userID、时间戳或分组起止时间、source、chat_type。
 
-### FR4 Chat skill 生成
+### S3 生成带记忆检索的 chat skill
 
-- 根据风格 skill + 记忆后端配置生成 `.chat-memory.skill`。
-- skill 中说明何时 recall、如何构造 query、如何处理无记忆结果。
-- 对 Hindsight 使用 `types=["world","observation"]`、conversation tag、bank ID。
-- 对 Mem0 使用 user_id / metadata 约定。
-- 对 generic HTTP 说明 request/response 字段映射。
+用户运行：
 
-### FR5 用户友好与开箱即用
+```bash
+wechat-skill-distill generate-chat-skills --input chat.json --out-dir generated-chat-skills --memory-backend mem0 --config config.local.json
+```
 
-- README 包含从安装到产物检查的完整路径。
-- `.env.example` 和 `config.example.json` 覆盖常见参数。
-- 提供 `doctor` 命令检查依赖、输入文件、环境变量。
-- 每个写远程服务的命令都有 `--dry-run`。
-- 错误信息要指出缺少哪个参数、如何设置。
+产物：
 
-## 数据与隐私要求
+```text
+generated-chat-skills/Participant A.chat-memory.skill
+generated-chat-skills/Participant B.chat-memory.skill
+```
 
-- 默认不提交聊天原文、日志、API key 和 `.env`。
-- 生成产物中的 API key 必须使用环境变量引用。
-- logs/runs/exports 默认进入 `.gitignore`。
-- 导入远程记忆库前必须支持 dry-run。
+要求：
 
-## 验收标准
+- 文件包含 memory backend 的 recall 约定。
+- 文件不写入真实 API key，只引用环境变量。
+- 当检索不到相关事实时，skill 必须要求 agent 降低确定性或追问，不能编造。
+
+### S4 审查与质量评估
+
+用户希望知道生成结果是否可信：
+
+- `doctor` 检查输入文件、参与者映射、环境变量和输出目录。
+- 后续版本提供 `evaluate-skills`，检查风格覆盖率、样本泄漏、对方身份混入、隐私风险和记忆字段完整性。
+
+### S5 扩展新的来源或后端
+
+开发者希望新增 Telegram、WhatsApp、微信数据库导出、企业微信或自定义 CSV：
+
+- parser 输出统一 `ChatMessage`。
+- memory backend 实现统一 `MemoryBackend.write(items)`。
+- skill generator 不依赖具体来源。
+
+## 5. 信息架构
+
+### 5.1 输入
+
+- WeFlow JSON：当前 MVP 支持。
+- participants config：把 `isSend` 或 `senderUsername` 映射到稳定 `user_id` 和展示名。
+- `.env`：只保存本地 API key 和后端地址，不提交。
+- config JSON：保存参与者、后端 URL、默认输出路径。
+
+### 5.2 中间模型
+
+`ChatMessage`：
+
+- `local_id`
+- `timestamp`
+- `date`
+- `sender_name`
+- `user_id`
+- `message_type`
+- `content`
+
+`MemoryItem`：
+
+- `content`
+- `metadata`
+- `timestamp`
+- `participants`
+- `tags`
+
+### 5.3 输出
+
+- `*.skill`：纯风格 skill，无记忆依赖。
+- `*.chat-memory.skill`：风格 + recall contract。
+- `memory.jsonl`：离线可审查记忆包。
+- 后续版本：`profile.json`、`quality-report.json`、`redaction-report.json`。
+
+## 6. 功能需求
+
+### FR1 Parser 与数据规范化
+
+- MVP 支持 WeFlow JSON 的 `messages` 数组。
+- 支持文本消息和引用消息；忽略系统消息、图片、语音、视频等不可直接文本化内容。
+- 支持 `start_date`、`end_date`。
+- 支持通过 `isSend` 或 `senderUsername` 映射参与者。
+- 不做硬编码人名替换或特定聊天修正。
+- 后续 parser 应注册为插件，输出统一 `ChatMessage`。
+
+### FR2 风格画像提炼
+
+- 每个 userID 独立统计，不跨用户合并。
+- 基础指标：消息数、平均长度、短句比例、常见表达、样本句。
+- skill 必须避免直接复制整段原文作为默认回复。
+- skill 必须包含身份边界、事实边界和隐私边界。
+- 后续版本增加：话题分布、时间段习惯、标点/表情倾向、回应模式、情绪承接方式。
+
+### FR3 无记忆 skill
+
+- 命令：`extract-skills`。
+- 默认后缀：`.skill`。
+- 不包含 `## 记忆检索`。
+- 不引用 Hindsight、Mem0、generic HTTP、JSONL recall。
+- 适合离线角色风格模拟、提示词库和手动审查。
+
+### FR4 有记忆 chat skill
+
+- 命令：`generate-chat-skills`。
+- 默认后缀：`.chat-memory.skill`。
+- 必须包含 memory backend 专属 recall 指南。
+- 支持 `jsonl`、`generic-http`、`hindsight`、`mem0`。
+- 不写入真实 key，只引用环境变量。
+
+### FR5 Memory adapter
+
+- MVP 后端：
+  - `jsonl`：本地文件，默认 dry-run 目标。
+  - `generic-http`：向任意 HTTP endpoint POST 统一 payload。
+  - `hindsight`：调用 Hindsight memory bank API。
+  - `mem0`：使用 Mem0 Python client；缺少依赖时给出安装提示。
+- 支持 `group-by message` 和 `group-by day`。
+- 后续版本增加 `session`、`topic`、`semantic-chunk` 分组。
+
+### FR6 Recall contract
+
+- 每种后端都有明确 query 构造、metadata 过滤和无结果策略。
+- Hindsight contract 包含 bank、types、tags、conversation tag。
+- Mem0 contract 包含 user_id、metadata、source 和 conversation_id。
+- Generic HTTP contract 包含 request/response schema 建议。
+- JSONL contract 说明宿主 agent 需要先做本地检索再注入上下文。
+
+### FR7 用户体验
+
+- README 提供从安装、配置、示例运行到真实数据导入的完整路径。
+- `doctor` 能检查输入文件、消息数、参与者、必要环境变量。
+- 命令错误必须指出缺少哪个参数以及如何设置。
+- 所有远程写入命令支持先 dry-run。
+- 默认示例不依赖用户私人聊天文件。
+
+### FR8 隐私与安全
+
+- `.env`、raw exports、logs、runs、exports、generated output 默认不提交。
+- 生成 skill 不包含 API key。
+- 不在产品中嵌入特定用户姓名、ID、私人文件路径或云服务 key。
+- 后续版本提供 redaction 规则：手机号、地址、身份证、银行卡、邮箱、URL token。
+
+### FR9 可测试性
+
+- 单元测试覆盖 parser、skill 分离、memory JSONL 字段。
+- CLI 验收覆盖 `doctor`、`extract-skills`、`generate-chat-skills`、`import --dry-run`。
+- 后续版本补端到端测试 fixture 和质量报告 golden file。
+
+### FR10 可扩展性
+
+- Parser、backend、skill template 应保持模块边界清晰。
+- 新后端不应修改 parser。
+- 新 parser 不应修改 memory backend。
+- 复杂能力先沉淀到 PRD/roadmap，再进入实现。
+
+## 7. CLI 设计
+
+```bash
+wechat-skill-distill doctor --input chat.json --config config.local.json
+wechat-skill-distill weflow-guide
+wechat-skill-distill extract-skills --input chat.json --out-dir generated-skills --config config.local.json
+wechat-skill-distill import --backend jsonl --input chat.json --output exports/memory.jsonl --dry-run --config config.local.json
+wechat-skill-distill generate-chat-skills --input chat.json --out-dir generated-chat-skills --memory-backend jsonl --config config.local.json
+```
+
+后续命令：
+
+```bash
+wechat-skill-distill inspect --input chat.json --config config.local.json
+wechat-skill-distill evaluate-skills --skills generated-skills --input chat.json
+wechat-skill-distill redact --input chat.json --output redacted.json --policy config/redaction.json
+wechat-skill-distill init --wizard
+```
+
+## 8. 验收标准
+
+### 当前 MVP 必须满足
 
 - `python3 -m unittest discover -s tests` 通过。
 - `wechat-skill-distill doctor --input examples/chat.json --config config.example.json` 能检查输入。
-- `wechat-skill-distill extract-skills --input examples/chat.json --out-dir generated-skills --memory-backend jsonl --config config.example.json` 生成两个独立 skill。
-- `wechat-skill-distill import --backend jsonl --input examples/chat.json --output exports/memory.jsonl --dry-run --config config.example.json` 生成 JSONL。
-- `wechat-skill-distill generate-chat-skills --input examples/chat.json --memory-backend jsonl --out-dir generated-chat-skills --config config.example.json` 生成 memory-aware skill。
-- README 中的 quickstart 能从空虚拟环境跑通本地 dry-run。
+- `wechat-skill-distill extract-skills --input examples/chat.json --out-dir /tmp/wsd/generated-skills --config config.example.json` 生成两个 `.skill`。
+- 生成的 `.skill` 不包含 `## 记忆检索`、`HINDSIGHT_API_KEY`、`MEM0_API_KEY`。
+- `wechat-skill-distill generate-chat-skills --input examples/chat.json --memory-backend jsonl --out-dir /tmp/wsd/generated-chat-skills --config config.example.json` 生成两个 `.chat-memory.skill`。
+- 生成的 `.chat-memory.skill` 包含 `## 记忆检索`。
+- `wechat-skill-distill import --backend jsonl --input examples/chat.json --output /tmp/wsd/memory.jsonl --dry-run --config config.example.json` 生成 JSONL。
+- JSONL 每行包含 `timestamp` 和 `participants` 顶层字段。
+- 仓库中不得出现真实 API key、特定私人聊天人名或私人聊天文件依赖。
 
-## 里程碑
+### 下一阶段目标
 
-1. PRD 和配置模板。
-2. 统一 parser、skill generator、memory adapter。
-3. CLI 命令与 dry-run。
-4. README 完整安装使用引导。
-5. 单元测试与验收命令。
+- 增加 `inspect`，输出参与者、日期范围、消息类型、跳过原因。
+- 增加 `evaluate-skills`，自动检查风格覆盖和混入风险。
+- 增加 redaction policy。
+- 增加 parser/backend 注册机制。
+- 增加更丰富的风格画像 JSON。
+
+## 9. 路线图
+
+### M1 当前 MVP
+
+- WeFlow parser。
+- 无记忆 skill 与有记忆 chat-memory skill 分离。
+- JSONL、generic HTTP、Hindsight、Mem0 adapter。
+- README、config、doctor、单元测试。
+
+### M2 产品可用性增强
+
+- 初始化向导。
+- inspect/evaluate/redact。
+- profile.json 输出。
+- 更明确的错误恢复建议。
+
+### M3 生态扩展
+
+- 多聊天来源 parser。
+- 更多记忆后端。
+- 本地向量索引。
+- 质量评测报告。
+
+### M4 高级记忆能力
+
+- 事实抽取。
+- 记忆合并。
+- 时间线与关系变化建模。
+- Graph/temporal retrieval adapter。
+
+## 10. 非目标
+
+- 不破解微信、不绕过平台安全机制、不自动获取聊天记录。
+- 不训练或微调模型。
+- 不保证云记忆服务 API 永远兼容，adapter 需要按后端版本维护。
+- 不把模拟聊天内容当事实来源。

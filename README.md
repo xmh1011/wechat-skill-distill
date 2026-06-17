@@ -2,7 +2,7 @@
 
 Distill WeFlow-exported WeChat private chats into:
 
-- per-user chat style skills
+- per-user style-only skills
 - memory backend imports
 - memory-aware chat skills
 
@@ -11,10 +11,19 @@ The toolkit is backend-neutral. Hindsight, Mem0, JSONL, and generic HTTP are tre
 ## What It Does
 
 1. Parse WeFlow JSON exports.
-2. Extract one independent chat skill per participant.
+2. Extract one independent style-only skill per participant.
 3. Import chat records into a memory backend.
 4. Generate chat skills that know how to recall memory.
 5. Keep secrets out of generated files and git.
+
+## File Types
+
+This toolkit intentionally generates two different skill artifacts:
+
+| Command | Output | Memory section | Use case |
+| --- | --- | --- | --- |
+| `extract-skills` | `Participant A.skill` | No | Style-only prompting, manual review, offline role voice. |
+| `generate-chat-skills` | `Participant A.chat-memory.skill` | Yes | Agent chats that should recall facts from JSONL, Hindsight, Mem0, or generic HTTP memory. |
 
 ## Install
 
@@ -61,18 +70,17 @@ wechat-skill-distill doctor --input examples/chat.json --config config.local.jso
 wechat-skill-distill extract-skills \
   --input examples/chat.json \
   --out-dir generated-skills \
-  --memory-backend jsonl \
   --config config.local.json
 ```
 
 Outputs look like:
 
 ```text
-generated-skills/Participant A.chat-memory.skill
-generated-skills/Participant B.chat-memory.skill
+generated-skills/Participant A.skill
+generated-skills/Participant B.skill
 ```
 
-Each skill is independent and contains only that user’s style profile and examples.
+Each skill is independent and contains only that user’s style profile and examples. It does not contain a memory backend, recall instructions, or API key references.
 
 ## Import Memory
 
@@ -157,6 +165,13 @@ wechat-skill-distill generate-chat-skills \
 
 Use `--memory-backend hindsight`, `mem0`, or `generic-http` to generate backend-specific recall instructions.
 
+Outputs look like:
+
+```text
+generated-chat-skills/Participant A.chat-memory.skill
+generated-chat-skills/Participant B.chat-memory.skill
+```
+
 ## Safety
 
 - `.env`, raw chat exports, generated exports, logs, and runs are ignored.
@@ -168,6 +183,12 @@ Use `--memory-backend hindsight`, `mem0`, or `generic-http` to generate backend-
 ```bash
 python3 -m unittest discover -s tests
 wechat-skill-distill doctor --input examples/chat.json --config config.local.json
-wechat-skill-distill extract-skills --input examples/chat.json --out-dir generated-skills --memory-backend jsonl --config config.local.json
+wechat-skill-distill extract-skills --input examples/chat.json --out-dir generated-skills --config config.local.json
+wechat-skill-distill generate-chat-skills --input examples/chat.json --out-dir generated-chat-skills --memory-backend jsonl --config config.local.json
 wechat-skill-distill import --backend jsonl --input examples/chat.json --output exports/memory.jsonl --dry-run --config config.local.json
 ```
+
+## Product Notes
+
+- [PRD.md](PRD.md) defines the product scope, scenarios, CLI contract, and roadmap.
+- [docs/research/open-source-review.md](docs/research/open-source-review.md) records the open-source projects reviewed while shaping this product.

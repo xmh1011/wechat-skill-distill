@@ -61,12 +61,25 @@ def cmd_weflow_guide(_: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_extract_skills(args: argparse.Namespace) -> int:
+def _messages_from_args(args: argparse.Namespace):
     config = load_config(args.config)
     participants = load_participants(args.participants, config)
-    messages = load_weflow_messages(args.input, start_date=args.start_date, end_date=args.end_date, participants=participants)
-    skills = generate_skill_texts(messages, memory_backend=args.memory_backend)
-    written = write_skill_files(skills, args.out_dir)
+    return load_weflow_messages(args.input, start_date=args.start_date, end_date=args.end_date, participants=participants)
+
+
+def cmd_extract_skills(args: argparse.Namespace) -> int:
+    messages = _messages_from_args(args)
+    skills = generate_skill_texts(messages, include_memory=False)
+    written = write_skill_files(skills, args.out_dir, suffix="skill")
+    for path in written:
+        print(path)
+    return 0
+
+
+def cmd_generate_chat_skills(args: argparse.Namespace) -> int:
+    messages = _messages_from_args(args)
+    skills = generate_skill_texts(messages, include_memory=True, memory_backend=args.memory_backend)
+    written = write_skill_files(skills, args.out_dir, suffix="chat-memory.skill")
     for path in written:
         print(path)
     return 0
@@ -132,14 +145,14 @@ def build_parser() -> argparse.ArgumentParser:
     extract = sub.add_parser("extract-skills", help="generate per-user chat skills from a WeFlow JSON")
     extract.add_argument("--input", required=True, type=Path)
     extract.add_argument("--out-dir", required=True, type=Path)
-    extract.add_argument("--memory-backend", default="jsonl", choices=["hindsight", "mem0", "jsonl", "generic-http"])
+    extract.add_argument("--memory-backend", choices=["hindsight", "mem0", "jsonl", "generic-http"], help=argparse.SUPPRESS)
     extract.add_argument("--config", type=Path)
     extract.add_argument("--participants", type=Path)
     extract.add_argument("--start-date")
     extract.add_argument("--end-date")
     extract.set_defaults(func=cmd_extract_skills)
 
-    chat_skills = sub.add_parser("generate-chat-skills", help="alias for extract-skills with memory recall instructions")
+    chat_skills = sub.add_parser("generate-chat-skills", help="generate per-user chat skills with memory recall instructions")
     chat_skills.add_argument("--input", required=True, type=Path)
     chat_skills.add_argument("--out-dir", required=True, type=Path)
     chat_skills.add_argument("--memory-backend", default="jsonl", choices=["hindsight", "mem0", "jsonl", "generic-http"])
@@ -147,7 +160,7 @@ def build_parser() -> argparse.ArgumentParser:
     chat_skills.add_argument("--participants", type=Path)
     chat_skills.add_argument("--start-date")
     chat_skills.add_argument("--end-date")
-    chat_skills.set_defaults(func=cmd_extract_skills)
+    chat_skills.set_defaults(func=cmd_generate_chat_skills)
 
     imp = sub.add_parser("import", help="import chat messages into a memory backend")
     imp.add_argument("--input", required=True, type=Path)

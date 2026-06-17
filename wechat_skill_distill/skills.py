@@ -81,33 +81,67 @@ def _style_summary(user_messages: list[ChatMessage]) -> str:
     return f"- 平均消息长度约 {avg_len:.1f} 字；短消息占比约 {short_ratio:.0%}。\n- 常见表达：{'、'.join(_common_phrases(user_messages)) or '样本不足'}。"
 
 
-def generate_skill_texts(messages: list[ChatMessage], *, memory_backend: str = "hindsight") -> dict[str, str]:
+def generate_skill_texts(
+    messages: list[ChatMessage],
+    *,
+    include_memory: bool = False,
+    memory_backend: str = "jsonl",
+) -> dict[str, str]:
     by_user = _messages_by_user(messages)
     skills: dict[str, str] = {}
-    memory_text = MEMORY_BACKEND_TEXT.get(memory_backend, MEMORY_BACKEND_TEXT["generic-http"])
+    memory_text = MEMORY_BACKEND_TEXT.get(memory_backend, MEMORY_BACKEND_TEXT["generic-http"]) if include_memory else ""
     for user_id, user_messages in by_user.items():
         if not user_messages:
             continue
         name = user_messages[0].sender_name
         samples = "\n".join(f"```text\n{line}\n```" for line in _sample_lines(user_messages))
+        title = f"{name} Chat Skill" if include_memory else f"{name} Skill"
+        description = (
+            f"模拟 userID={user_id} 的中文微信私聊回复；需要事实时结合记忆检索。"
+            if include_memory
+            else f"模拟 userID={user_id} 的中文微信私聊回复；仅提炼说话风格。"
+        )
+        recall_guidance = (
+            "- 当前问题涉及这个人的经历、偏好、关系、时间线或上下文事实时，先按下面的记忆检索约定 recall。"
+            if include_memory
+            else "- 如果回复需要具体事实，只能使用当前输入上下文；不要自行补全历史。"
+        )
+        memory_section = f"\n{memory_text}\n" if include_memory else ""
+        fact_guard = "用事实前先确认来自当前上下文或记忆检索。" if include_memory else "用事实前先确认来自当前上下文。"
+        missing_guard = "记忆缺失时降低确定性，不要编造。" if include_memory else "上下文缺失时降低确定性，不要编造。"
+        fact_check = "如果包含具体事实，是否来自上下文或记忆？" if include_memory else "如果包含具体事实，是否来自当前上下文？"
+        hard_fact_boundary = (
+            "不要把推测当事实；无记忆、无上下文时宁可追问。"
+            if include_memory
+            else "不要把推测当事实；上下文不足时宁可追问。"
+        )
+        fact_scenario = (
+            "事实相关：先检索记忆；有结果时自然带入，没有结果时用不确定语气或追问。"
+            if include_memory
+            else "事实相关：只依据当前上下文；信息不足时用不确定语气或追问。"
+        )
+        identity_boundary = (
+            "不要输出另一个用户的姓名、身份设定、口头禅或私密事实，除非当前上下文或检索结果明确要求提及。"
+            if include_memory
+            else "不要输出另一个用户的姓名、身份设定、口头禅或私密事实，除非当前上下文明确要求提及。"
+        )
         skills[user_id] = f"""---
 name: chat-user-{user_id}
-description: 模拟 userID={user_id} 的中文微信私聊回复；需要事实时结合记忆检索。
+description: {description}
 ---
 
-# {name} Chat Skill
+# {title}
 
 ## 目标
 
-模拟 userID={user_id} {name} 的微信私聊表达。默认只输出聊天内容，不加说话人标签，不解释自己使用了 skill 或记忆。
+模拟 userID={user_id} {name} 的微信私聊表达。默认只输出聊天内容，不加说话人标签，不解释自己使用了 skill。
 
 ## 使用时机
 
 - 需要以 userID={user_id} 的身份进行中文微信私聊回复时使用。
-- 当前问题涉及这个人的经历、偏好、关系、时间线或上下文事实时，先按下面的记忆检索约定 recall。
+{recall_guidance}
 - 只负责生成这个用户的回复，不负责替另一个聊天参与者补话。
-
-{memory_text}
+{memory_section}
 
 ## 说话风格画像
 
@@ -116,7 +150,7 @@ description: 模拟 userID={user_id} 的中文微信私聊回复；需要事实�
 ## 场景模板
 
 - 日常承接：先短回应对方上一句，再补一句自己的判断或状态。
-- 事实相关：先检索记忆；有结果时自然带入，没有结果时用不确定语气或追问。
+- {fact_scenario}
 - 约时间/安排：保持微信式简短确认，避免把不存在的细节说死。
 - 情绪回应：先接住情绪，再给轻量建议，不写长篇分析。
 
@@ -130,33 +164,33 @@ description: 模拟 userID={user_id} 的中文微信私聊回复；需要事实�
 
 - 像微信即时回复，优先短句和自然反应。
 - 可以多气泡输出，用换行分隔。
-- 用事实前先确认来自当前上下文或记忆检索。
-- 记忆缺失时降低确定性，不要编造。
+- {fact_guard}
+- {missing_guard}
 - 不要自称 AI、模型、助手。
 - 不要混入其他用户的姓名、身份或说话风格。
 
 ## 硬边界
 
-- 不要输出另一个用户的姓名、身份设定、口头禅或私密事实，除非当前上下文或检索结果明确要求提及。
+- {identity_boundary}
 - 不要把样本句逐字复读成新回复。
-- 不要把推测当事实；无记忆、无上下文时宁可追问。
+- {hard_fact_boundary}
 - 不要泄露 API key、配置文件路径或工具内部实现细节。
 
 ## 自检
 
 1. 是否像 {name} 的微信气泡？
 2. 是否使用了上面的真实节奏和常见表达？
-3. 如果包含具体事实，是否来自上下文或记忆？
+3. {fact_check}
 4. 是否避免了另一个用户的人格和口头禅？
 """
     return skills
 
 
-def write_skill_files(skills: dict[str, str], out_dir: Path, *, suffix: str = "chat-memory.skill") -> list[Path]:
+def write_skill_files(skills: dict[str, str], out_dir: Path, *, suffix: str = "skill") -> list[Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
     for user_id, text in skills.items():
-        name_match = re.search(r"# (.+?) Chat Skill", text)
+        name_match = re.search(r"# (.+?) (?:Chat )?Skill", text)
         name = name_match.group(1) if name_match else f"user-{user_id}"
         path = out_dir / f"{name}.{suffix}"
         path.write_text(text.rstrip() + "\n", encoding="utf-8")

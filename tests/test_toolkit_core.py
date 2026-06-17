@@ -4,7 +4,7 @@ import tempfile
 import unittest
 
 from wechat_skill_distill.memory import build_memory_items, write_jsonl
-from wechat_skill_distill.skills import generate_skill_texts
+from wechat_skill_distill.skills import generate_skill_texts, write_skill_files
 from wechat_skill_distill.weflow import load_weflow_messages
 
 
@@ -58,7 +58,7 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertEqual(messages[1].sender_name, "Participant B")
         self.assertEqual(len(messages), 2)
 
-    def test_generate_skill_texts_are_independent(self) -> None:
+    def test_generate_plain_skill_texts_are_independent_and_memory_free(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "chat.json"
             path.write_text(json.dumps(self.sample_export(), ensure_ascii=False), encoding="utf-8")
@@ -70,13 +70,35 @@ class ToolkitCoreTest(unittest.TestCase):
                 },
             )
 
-        skills = generate_skill_texts(messages, memory_backend="hindsight")
+        skills = generate_skill_texts(messages, include_memory=False)
+
+        self.assertIn("Participant A Skill", skills["user-a"])
+        self.assertIn("Participant B Skill", skills["user-b"])
+        self.assertNotIn("Participant B Skill", skills["user-a"])
+        self.assertNotIn("Participant A Skill", skills["user-b"])
+        self.assertNotIn("## 记忆检索", skills["user-a"])
+        self.assertNotIn("记忆", skills["user-a"])
+        self.assertNotIn("HINDSIGHT_API_KEY", skills["user-a"])
+
+    def test_generate_memory_chat_skills_include_backend_recall(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "chat.json"
+            out_dir = Path(tmp) / "skills"
+            path.write_text(json.dumps(self.sample_export(), ensure_ascii=False), encoding="utf-8")
+            messages = load_weflow_messages(
+                path,
+                participants={
+                    "0": {"user_id": "user-a", "name": "Participant A"},
+                    "1": {"user_id": "user-b", "name": "Participant B"},
+                },
+            )
+
+            skills = generate_skill_texts(messages, include_memory=True, memory_backend="hindsight")
+            written = write_skill_files(skills, out_dir, suffix="chat-memory.skill")
 
         self.assertIn("Participant A Chat Skill", skills["user-a"])
-        self.assertIn("Participant B Chat Skill", skills["user-b"])
-        self.assertNotIn("Participant B Chat Skill", skills["user-a"])
-        self.assertNotIn("Participant A Chat Skill", skills["user-b"])
         self.assertIn("HINDSIGHT_API_KEY", skills["user-a"])
+        self.assertTrue(any(path.name == "Participant A.chat-memory.skill" for path in written))
 
     def test_memory_items_write_jsonl_with_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

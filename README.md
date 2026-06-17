@@ -203,7 +203,7 @@ WSD_MEMORY_RECALL_BACKEND=auto
 WSD_MEMORY_RECALL_MODE=auto
 WSD_MEMORY_RESULT_LIMIT=24
 WSD_MEMORY_MAX_TOKENS=3200
-WSD_MEMORY_QUERY_VARIANTS=3
+WSD_MEMORY_QUERY_VARIANTS=1
 ```
 
 Hindsight recall:
@@ -238,7 +238,7 @@ JSONL recall:
 JSONL_MEMORY_PATH=exports/memory.jsonl
 ```
 
-Recall runs in `auto` mode by default: lightweight greetings do not query memory, factual turns build a query from the current message, recent user questions, and the active persona. Hindsight-specific recall first tries strict `user:<id>` scoped recall, then falls back to the skill's conversation tags when the strict pass returns no facts. Other backends receive the same user/persona/query contract and keep their own ranking order.
+Recall runs in `auto` mode by default: lightweight greetings do not query memory, factual turns build a query from the current message, necessary recent user questions, and the active persona. The harness uses a 默认单 query policy；排序和 rerank 交给记忆后端。Hindsight-specific recall first tries strict `user:<id>` scoped recall, then falls back to the skill's conversation tags when the strict pass returns no facts. Other backends receive the same user/persona/query contract and keep their own ranking order. If `WSD_MEMORY_QUERY_VARIANTS` is explicitly set above `1`, Generic HTTP receives all variants in one request through `queries`; Hindsight and Mem0 should usually stay on one precise query so their own ranking remains authoritative.
 
 Supported model protocols:
 

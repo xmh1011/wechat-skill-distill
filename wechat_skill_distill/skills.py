@@ -19,7 +19,8 @@ MEMORY_BACKEND_TEXT = {
 - types：`["world", "observation"]`
 - tags：优先使用 `user:{userID}` 严格限定当前人物；无结果时再按具体 conversation tag 放宽。
 - tags_match：默认 `all_strict`；conversation fallback 可用 `any_strict`。
-- query：保持短而聚焦，包含目标人物、userID、当前用户原话和最近用户追问；需要语义改写时交给宿主 query planner，不能在 skill 或代码里维护固定领域词表，也不能加入未被用户问题或记忆支持的具体公司、学校、人名。
+- query：保持短而聚焦，包含目标人物、userID、当前用户原话和必要的最近用户追问；query planner 只整理指代和上下文，不扩展固定领域词表，不加入未被用户问题或记忆支持的具体公司、学校、人名。
+- 排序和 rerank 交给记忆后端；skill 和 harness 不做二次排序。
 - include：建议开启 `chunks` 和 `source_facts`，让 agent 在结构化事实不够完整时能看到原始上下文。
 
 如果检索不到直接相关事实，不要编造细节；自然表达不确定或追问。
@@ -31,7 +32,8 @@ MEMORY_BACKEND_TEXT = {
 - Key：`MEM0_API_KEY`
 - user_id：当前 skill 对应的 userID
 - client：建议使用 `MemoryClient.search` / `client.search`
-- query：包含目标人物、userID、当前用户原话和最近用户追问；保持短而聚焦。
+- query：包含目标人物、userID、当前用户原话和必要的最近用户追问；保持短而聚焦。
+- 排序和 rerank 交给记忆后端；skill 和 harness 不做二次排序。
 - limit：按宿主上下文预算设置，普通事实建议 12-24 条。
 - metadata：建议包含 `source`、`conversation_id`、`timestamp`、`userID`
 
@@ -43,7 +45,8 @@ MEMORY_BACKEND_TEXT = {
 - URL：`MEMORY_RECALL_URL`
 - Key：`MEMORY_API_KEY`
 - 请求字段建议：`query`、`queries`、`user_id`、`persona`、`history`、`tags`、`limit`、`max_tokens`
-- query：包含目标人物、userID、当前用户原话和最近用户追问；保持短而聚焦。
+- query：包含目标人物、userID、当前用户原话和必要的最近用户追问；保持短而聚焦。
+- 排序和 rerank 交给记忆后端；skill 和 harness 不做二次排序。
 - 响应字段建议：`results[].text` / `results[].content` / `results[].memory`
 
 如果接口不可用或无结果，不要编造细节；不要在 skill 或代码里维护固定领域词表。""",

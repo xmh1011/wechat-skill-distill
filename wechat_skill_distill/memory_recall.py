@@ -223,8 +223,11 @@ def _recall_queries(message: str, persona_name: str, user_id: str, history: str,
             )
         except Exception:
             planned = []
-        queries.extend(planned)
-    max_variants = int(_env(env, "WSD_MEMORY_QUERY_VARIANTS", "MEMORY_QUERY_VARIANTS", "WSD_HINDSIGHT_QUERY_VARIANTS", "HINDSIGHT_QUERY_VARIANTS", default="3"))
+        if planned:
+            queries = planned
+    max_variants = int(_env(env, "WSD_MEMORY_QUERY_VARIANTS", "MEMORY_QUERY_VARIANTS", "WSD_HINDSIGHT_QUERY_VARIANTS", "HINDSIGHT_QUERY_VARIANTS", default="1"))
+    if max_variants > 1 and planner_mode in {"llm", "model", "on", "1", "true"}:
+        queries = [base_query, *queries]
     deduped = []
     seen = set()
     for query in queries:
@@ -329,29 +332,24 @@ def _generic_http_recall_for_chat(payload: Mapping[str, Any], env: Mapping[str, 
         headers["Authorization"] = f"Bearer {api_key}"
     limit = _result_limit(env, backend="generic-http")
     tags = _csv(_env(env, "WSD_MEMORY_TAGS", "MEMORY_TAGS")) or ([f"user:{user_id}"] if user_id else [])
-    results: list[dict[str, Any]] = []
-    for query in queries:
-        body = {
-            "query": query,
-            "queries": queries,
-            "user_id": user_id,
-            "persona": {"name": persona_name, "userId": user_id},
-            "history": history,
-            "tags": tags,
-            "limit": limit,
-            "max_tokens": int(_env(env, "WSD_MEMORY_MAX_TOKENS", "MEMORY_MAX_TOKENS", default="3200")),
-        }
-        response = requests.post(url, headers=headers, json=body, timeout=60)
-        try:
-            data = response.json()
-        except ValueError as exc:
-            raise MemoryRecallError(f"generic HTTP recall returned non-JSON response: HTTP {response.status_code}") from exc
-        if response.status_code >= 400:
-            raise MemoryRecallError(f"generic HTTP recall HTTP {response.status_code}: {str(data)[:800]}")
-        results = _merge_recall_results(results, _normalize_recall_results(data, source="generic-http", limit=limit), limit)
-        if len(results) >= limit:
-            break
-    return results
+    body = {
+        "query": queries[0],
+        "queries": queries,
+        "user_id": user_id,
+        "persona": {"name": persona_name, "userId": user_id},
+        "history": history,
+        "tags": tags,
+        "limit": limit,
+        "max_tokens": int(_env(env, "WSD_MEMORY_MAX_TOKENS", "MEMORY_MAX_TOKENS", default="3200")),
+    }
+    response = requests.post(url, headers=headers, json=body, timeout=60)
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise MemoryRecallError(f"generic HTTP recall returned non-JSON response: HTTP {response.status_code}") from exc
+    if response.status_code >= 400:
+        raise MemoryRecallError(f"generic HTTP recall HTTP {response.status_code}: {str(data)[:800]}")
+    return _normalize_recall_results(data, source="generic-http", limit=limit)
 
 
 def _mem0_recall_for_chat(payload: Mapping[str, Any], env: Mapping[str, str]) -> list[dict[str, Any]]:

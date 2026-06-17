@@ -10,7 +10,7 @@ from wechat_skill_distill.evaluation import collect_skill_paths, evaluate_skills
 from wechat_skill_distill.inspection import inspect_weflow_export
 from wechat_skill_distill.memory import build_memory_items, write_jsonl
 from wechat_skill_distill.memory_recall import memory_runtime_status, recall_for_chat
-from wechat_skill_distill.model_client import build_companion_prompt, generate_chat_reply, generate_recall_query_variants, runtime_status
+from wechat_skill_distill.model_client import build_companion_prompt, build_recall_query_planner_prompt, generate_chat_reply, generate_recall_query_variants, runtime_status
 from wechat_skill_distill.redaction import redact_weflow_export
 from wechat_skill_distill.skills import generate_skill_texts, write_skill_files
 from wechat_skill_distill.weflow import load_weflow_messages
@@ -138,13 +138,16 @@ class ToolkitCoreTest(unittest.TestCase):
             mem0_skill = generate_skill_texts(messages, include_memory=True, memory_backend="mem0")["user-a"]
             generic_skill = generate_skill_texts(messages, include_memory=True, memory_backend="generic-http")["user-a"]
             jsonl_skill = generate_skill_texts(messages, include_memory=True, memory_backend="jsonl")["user-a"]
+            hindsight_skill = generate_skill_texts(messages, include_memory=True, memory_backend="hindsight")["user-a"]
 
         self.assertIn("client.search", mem0_skill)
         self.assertIn("user_id：当前 skill 对应的 userID", mem0_skill)
-        self.assertIn("query：包含目标人物、userID、当前用户原话和最近用户追问", mem0_skill)
+        self.assertIn("query：包含目标人物、userID、当前用户原话和必要的最近用户追问", mem0_skill)
         self.assertIn("MEMORY_RECALL_URL", generic_skill)
         self.assertIn("请求字段建议：`query`、`queries`、`user_id`、`persona`、`history`、`tags`、`limit`、`max_tokens`", generic_skill)
         self.assertIn("不要在 skill 或代码里维护固定领域词表", generic_skill)
+        self.assertIn("排序和 rerank 交给记忆后端", generic_skill)
+        self.assertIn("query planner 只整理指代和上下文", hindsight_skill)
         self.assertIn("宿主运行时或 agent", jsonl_skill)
         self.assertNotIn("宿主 agent 先在 JSONL", jsonl_skill)
 
@@ -351,11 +354,8 @@ class ToolkitCoreTest(unittest.TestCase):
         - Bank：`memory-bank-test`
         """
         with patch("wechat_skill_distill.memory_recall.generate_recall_query_variants") as planner, patch("wechat_skill_distill.memory_recall.requests.post") as post:
-            planner.return_value = ["Participant A userID=user-a 单位 就职 组织"]
-            post.side_effect = [
-                MockResponse({"results": []}),
-                MockResponse({"results": [{"id": "m1", "text": "Participant A在Acme公司工作", "type": "world"}]}),
-            ]
+            planner.return_value = ["Participant A userID=user-a 当前问题：在哪家公司呢；上一问：你是做什么工作的"]
+            post.return_value = MockResponse({"results": [{"id": "m1", "text": "Participant A在Acme公司工作", "type": "world"}]})
 
             hits = recall_for_chat(
                 {
@@ -372,11 +372,18 @@ class ToolkitCoreTest(unittest.TestCase):
             )
 
         self.assertEqual([hit["content"] for hit in hits], ["Participant A在Acme公司工作"])
-        self.assertEqual(post.call_count, 2)
-        self.assertIn("当前用户原话：在哪家公司呢", post.call_args_list[0].kwargs["json"]["query"])
+        self.assertEqual(post.call_count, 1)
+        self.assertEqual(post.call_args_list[0].kwargs["json"]["query"], "Participant A userID=user-a 当前问题：在哪家公司呢；上一问：你是做什么工作的")
         self.assertNotIn("就职", post.call_args_list[0].kwargs["json"]["query"])
-        self.assertEqual(post.call_args_list[1].kwargs["json"]["query"], "Participant A userID=user-a 单位 就职 组织")
         planner.assert_called_once()
+
+    def test_recall_query_planner_prompt_delegates_expansion_to_memory_backend(self) -> None:
+        prompt = build_recall_query_planner_prompt()
+
+        self.assertIn("默认只生成 1 条 query", prompt)
+        self.assertIn("不要做本地 rerank", prompt)
+        for forbidden in ["同义词", "上位词", "拆成检索词", "字段词", "常见记录字段"]:
+            self.assertNotIn(forbidden, prompt)
 
     def test_hindsight_recall_falls_back_to_skill_conversation_tags(self) -> None:
         skill = """
@@ -446,6 +453,19 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertNotIn("本地检索结果和服务端 recall 结果", text)
         self.assertNotIn("JSONL contract 说明宿主 agent 需要先做本地检索再注入上下文", text)
 
+    def test_docs_keep_memory_backend_responsible_for_ranking(self) -> None:
+        readme = Path("README.md").read_text(encoding="utf-8")
+        prd = Path("PRD.md").read_text(encoding="utf-8")
+        env_example = Path(".env.example").read_text(encoding="utf-8")
+
+        self.assertIn("WSD_MEMORY_QUERY_VARIANTS=1", readme)
+        self.assertIn("WSD_MEMORY_QUERY_VARIANTS=1", env_example)
+        self.assertIn("默认单 query", readme)
+        self.assertIn("排序和 rerank 交给记忆后端", readme)
+        self.assertIn("默认单 query", prd)
+        self.assertNotIn("WSD_MEMORY_QUERY_VARIANTS=3", readme)
+        self.assertNotIn("WSD_MEMORY_QUERY_VARIANTS=3", env_example)
+
     def test_generic_http_recall_backend_uses_common_runtime_contract(self) -> None:
         with patch("wechat_skill_distill.memory_recall.requests.post") as post:
             post.return_value = MockResponse(
@@ -486,6 +506,33 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertEqual(kwargs["json"]["limit"], 9)
         self.assertIn("当前用户原话：你晚上一般喜欢干嘛", kwargs["json"]["query"])
         self.assertIn("之前聊过散步吗", kwargs["json"]["history"])
+
+    def test_generic_http_recall_sends_query_variants_once_for_backend_ranking(self) -> None:
+        with patch("wechat_skill_distill.memory_recall.generate_recall_query_variants") as planner, patch("wechat_skill_distill.memory_recall.requests.post") as post:
+            planner.return_value = ["Participant A userID=user-a 当前问题：在哪家公司呢", "Participant A userID=user-a 上一问：做什么工作"]
+            post.return_value = MockResponse({"results": [{"id": "g1", "text": "Participant A在Acme公司工作"}]})
+
+            hits = recall_for_chat(
+                {
+                    "message": "在哪家公司呢",
+                    "skill": "# Participant A Chat Skill",
+                    "persona": {"name": "Participant A", "userId": "user-a"},
+                    "history": [{"role": "user", "text": "你是做什么工作的"}],
+                },
+                env={
+                    "WSD_MEMORY_RECALL_BACKEND": "generic-http",
+                    "MEMORY_RECALL_URL": "https://memory.example.test/recall",
+                    "WSD_RECALL_QUERY_PLANNER": "llm",
+                    "WSD_MEMORY_QUERY_VARIANTS": "3",
+                },
+            )
+
+        self.assertEqual([hit["content"] for hit in hits], ["Participant A在Acme公司工作"])
+        self.assertEqual(post.call_count, 1)
+        body = post.call_args.kwargs["json"]
+        self.assertEqual(len(body["queries"]), 3)
+        self.assertIn("当前用户原话：在哪家公司呢", body["queries"][0])
+        self.assertEqual(body["queries"][1:], ["Participant A userID=user-a 当前问题：在哪家公司呢", "Participant A userID=user-a 上一问：做什么工作"])
 
     def test_mem0_recall_backend_uses_client_search_when_configured(self) -> None:
         class FakeMemoryClient:

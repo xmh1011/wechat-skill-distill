@@ -133,7 +133,7 @@ def _hindsight_recall_for_chat(payload: Mapping[str, Any], env: Mapping[str, str
         tag_attempts = [([], "any_strict")]
     results: list[dict[str, Any]] = []
     history = _recent_user_context(payload)
-    queries = _recall_queries(message, persona_name, user_id, history, payload, env)
+    queries = _recall_queries(message, persona_name, user_id, history, payload, env)[:1]
     for tags, tags_match in tag_attempts:
         results = _run_recall_queries(api_url, api_key, bank_id, queries, tags, tags_match, env)
         if results:
@@ -356,6 +356,7 @@ def _mem0_recall_for_chat(payload: Mapping[str, Any], env: Mapping[str, str]) ->
     _, _, user_id, _, queries = _common_recall_inputs(payload, env)
     if not queries:
         return []
+    queries = queries[:1]
     try:
         from mem0 import MemoryClient  # type: ignore
     except ImportError as exc:

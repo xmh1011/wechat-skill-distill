@@ -534,6 +534,35 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertNotIn("就职", post.call_args_list[0].kwargs["json"]["query"])
         planner.assert_called_once()
 
+    def test_hindsight_recall_uses_single_query_to_keep_backend_rerank_authoritative(self) -> None:
+        skill = """
+        # Participant A Chat Skill
+        - Bank：`memory-bank-test`
+        """
+        with patch("wechat_skill_distill.memory_recall.generate_recall_query_variants") as planner, patch("wechat_skill_distill.memory_recall.requests.post") as post:
+            planner.return_value = ["Participant A 当前问题：在哪家公司", "Participant A 上一问：做什么工作"]
+            post.return_value = MockResponse({"results": [{"id": "m1", "text": "Participant A在Acme公司工作", "type": "world"}]})
+
+            hits = recall_for_chat(
+                {
+                    "message": "在哪家公司呢",
+                    "skill": skill,
+                    "persona": {"name": "Participant A", "userId": "user-a"},
+                    "history": [{"role": "user", "text": "你是做什么工作的"}],
+                },
+                env={
+                    "HINDSIGHT_API_URL": "https://memory.example.test/api",
+                    "HINDSIGHT_API_KEY": "secret",
+                    "HINDSIGHT_BANK_ID": "memory-bank-test",
+                    "WSD_RECALL_QUERY_PLANNER": "llm",
+                    "WSD_MEMORY_QUERY_VARIANTS": "3",
+                },
+            )
+
+        self.assertEqual([hit["content"] for hit in hits], ["Participant A在Acme公司工作"])
+        self.assertEqual(post.call_count, 1)
+        self.assertIn("当前用户原话：在哪家公司呢", post.call_args.kwargs["json"]["query"])
+
     def test_recall_query_planner_prompt_delegates_expansion_to_memory_backend(self) -> None:
         prompt = build_recall_query_planner_prompt()
 
@@ -619,7 +648,9 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("WSD_MEMORY_QUERY_VARIANTS=1", env_example)
         self.assertIn("默认单 query", readme)
         self.assertIn("排序和 rerank 交给记忆后端", readme)
+        self.assertIn("Hindsight 和 Mem0 始终只向后端发送一条 query", readme)
         self.assertIn("默认单 query", prd)
+        self.assertIn("Hindsight/Mem0 adapter 始终只发送一条 query", prd)
         self.assertNotIn("WSD_MEMORY_QUERY_VARIANTS=3", readme)
         self.assertNotIn("WSD_MEMORY_QUERY_VARIANTS=3", env_example)
 
@@ -779,11 +810,13 @@ class ToolkitCoreTest(unittest.TestCase):
         class FakeMemoryClient:
             last_init = {}
             last_search = {}
+            search_count = 0
 
             def __init__(self, api_key=None):
                 FakeMemoryClient.last_init = {"api_key": api_key}
 
             def search(self, query, **kwargs):
+                FakeMemoryClient.search_count += 1
                 FakeMemoryClient.last_search = {"query": query, **kwargs}
                 return {
                     "results": [
@@ -824,6 +857,49 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertEqual(FakeMemoryClient.last_search["user_id"], "user-a")
         self.assertEqual(FakeMemoryClient.last_search["limit"], 7)
         self.assertIn("你喜欢什么样的咖啡馆", FakeMemoryClient.last_search["query"])
+        self.assertEqual(FakeMemoryClient.search_count, 1)
+
+    def test_mem0_recall_uses_single_query_to_keep_backend_rerank_authoritative(self) -> None:
+        class FakeMemoryClient:
+            search_calls = []
+
+            def __init__(self, api_key=None):
+                pass
+
+            def search(self, query, **kwargs):
+                FakeMemoryClient.search_calls.append({"query": query, **kwargs})
+                return {"results": [{"id": "m1", "memory": "Participant A在Acme公司工作"}]}
+
+        fake_mem0 = ModuleType("mem0")
+        fake_mem0.MemoryClient = FakeMemoryClient
+        original_mem0 = sys.modules.get("mem0")
+        sys.modules["mem0"] = fake_mem0
+        try:
+            with patch("wechat_skill_distill.memory_recall.generate_recall_query_variants") as planner:
+                planner.return_value = ["Participant A 当前问题：在哪家公司", "Participant A 上一问：做什么工作"]
+                hits = recall_for_chat(
+                    {
+                        "message": "在哪家公司呢",
+                        "skill": "# Participant A Chat Skill",
+                        "persona": {"name": "Participant A", "userId": "user-a"},
+                        "history": [{"role": "user", "text": "你是做什么工作的"}],
+                    },
+                    env={
+                        "WSD_MEMORY_RECALL_BACKEND": "mem0",
+                        "MEM0_API_KEY": "secret",
+                        "WSD_RECALL_QUERY_PLANNER": "llm",
+                        "WSD_MEMORY_QUERY_VARIANTS": "3",
+                    },
+                )
+        finally:
+            if original_mem0 is None:
+                sys.modules.pop("mem0", None)
+            else:
+                sys.modules["mem0"] = original_mem0
+
+        self.assertEqual([hit["content"] for hit in hits], ["Participant A在Acme公司工作"])
+        self.assertEqual(len(FakeMemoryClient.search_calls), 1)
+        self.assertIn("当前用户原话：在哪家公司呢", FakeMemoryClient.search_calls[0]["query"])
 
     def test_frontend_copy_and_defaults_are_persona_neutral(self) -> None:
         root = web_root()

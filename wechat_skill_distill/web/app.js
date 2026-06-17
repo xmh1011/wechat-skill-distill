@@ -310,9 +310,7 @@ async function sendMessage(input) {
     transcriptForPersona(personaId).push({
       role: "assistant",
       text,
-      timestamp: new Date().toISOString(),
-      provider: payload.provider,
-      model: payload.model
+      timestamp: new Date().toISOString()
     });
   } catch (error) {
     updateMessage(pending, `回复失败：${error.message}`);

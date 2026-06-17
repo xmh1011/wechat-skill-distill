@@ -16,7 +16,7 @@ from wechat_skill_distill.model_client import ModelCallError, ModelConfigError, 
 from wechat_skill_distill.redaction import redact_weflow_export
 from wechat_skill_distill.skills import generate_skill_texts, write_skill_files
 from wechat_skill_distill.weflow import load_weflow_messages
-from wechat_skill_distill.web_server import build_enriched_chat_payload, load_skill_assets, public_error_payload, public_skill_assets, resolve_preloaded_skill_payload, web_root
+from wechat_skill_distill.web_server import build_enriched_chat_payload, load_skill_assets, public_chat_reply_payload, public_error_payload, public_skill_assets, resolve_preloaded_skill_payload, web_root
 
 
 class MockResponse:
@@ -859,6 +859,8 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("默认不得接受浏览器传入的 provider 覆盖", prd)
         self.assertIn("默认不向浏览器返回 provider 或 memory 的原始错误细节", readme)
         self.assertIn("默认不得向浏览器返回 provider/memory 原始错误细节", prd)
+        self.assertIn("聊天响应只返回文本和记忆计数", readme)
+        self.assertIn("不得返回 provider、model 或 usage", prd)
         self.assertIn("浏览器只接收云记忆是否接入", readme)
         self.assertIn("浏览器不得接收 memory backend 名称或 bank_id", prd)
         self.assertIn("WSD_ALLOW_CLIENT_PROVIDER_OVERRIDE=0", env_example)
@@ -1148,6 +1150,8 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("transcriptForPersona(personaId).push", send_source)
         self.assertNotIn("activeTranscript().push({\n      role: \"assistant\"", send_source)
         self.assertNotIn("provider: els.providerSelect.value", send_source)
+        self.assertNotIn("provider: payload.provider", send_source)
+        self.assertNotIn("model: payload.model", send_source)
 
     def test_chat_server_ignores_client_memory_hits_by_default(self) -> None:
         payload = {
@@ -1269,6 +1273,23 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertEqual(payload["kind"], "provider")
         self.assertIn("模型服务调用失败", payload["error"])
         self.assertEqual(payload["detail"], "raw provider detail")
+
+    def test_public_chat_reply_payload_hides_model_details(self) -> None:
+        payload = public_chat_reply_payload(
+            {
+                "text": "可以，晚点说",
+                "provider": "openai",
+                "model": "deepseek-v4-flash",
+                "usage": {"total_tokens": 42},
+            },
+            {"server_hits": 2, "local_hits": 0},
+        )
+
+        self.assertEqual(payload, {"text": "可以，晚点说", "memory": {"server_hits": 2, "local_hits": 0}})
+        serialized = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("provider", serialized)
+        self.assertNotIn("deepseek", serialized)
+        self.assertNotIn("usage", serialized)
 
     def test_openai_compatible_chat_call_uses_server_side_protocol(self) -> None:
         with patch("wechat_skill_distill.model_client.requests.post") as post:

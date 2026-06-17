@@ -98,6 +98,16 @@ def public_error_payload(kind: str, exc: Exception, *, env: Mapping[str, str] | 
     return payload
 
 
+def public_chat_reply_payload(reply: Mapping[str, Any], memory_counts: Mapping[str, int]) -> dict[str, Any]:
+    return {
+        "text": str(reply.get("text") or ""),
+        "memory": {
+            "server_hits": int(memory_counts.get("server_hits") or 0),
+            "local_hits": int(memory_counts.get("local_hits") or 0),
+        },
+    }
+
+
 def _as_string_set(value: Any) -> set[str]:
     def expand(text: str) -> set[str]:
         result = {text} if text else set()
@@ -206,7 +216,7 @@ class ChatUIHandler(SimpleHTTPRequestHandler):
             server_hits = recall_for_chat(resolved_payload)
             enriched_payload, memory_counts = build_enriched_chat_payload(resolved_payload, server_hits)
             reply = generate_chat_reply(enriched_payload)
-            reply["memory"] = memory_counts
+            public_reply = public_chat_reply_payload(reply, memory_counts)
         except MemoryRecallError as exc:
             self._write_json(502, public_error_payload("memory", exc))
             return
@@ -216,7 +226,7 @@ class ChatUIHandler(SimpleHTTPRequestHandler):
         except ModelCallError as exc:
             self._write_json(502, public_error_payload("provider", exc))
             return
-        self._write_json(200, reply)
+        self._write_json(200, public_reply)
 
 
 def serve_chat_ui(host: str, port: int, *, env_file: Path | None = None, skill_paths: list[Path] | None = None) -> None:

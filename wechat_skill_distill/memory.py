@@ -38,6 +38,8 @@ def build_memory_items(messages: list[ChatMessage], *, group_by: str = "day") ->
             MemoryItem(
                 content=f"{message.timestamp} userID={message.user_id} {message.sender_name}: {message.content}",
                 metadata=_message_metadata(message),
+                timestamp=message.timestamp,
+                participants=[message.user_id],
                 tags=[*COMMON_TAGS, f"user:{message.user_id}"],
             )
             for message in messages
@@ -53,6 +55,7 @@ def build_memory_items(messages: list[ChatMessage], *, group_by: str = "day") ->
             for message in day_messages
         )
         participant_ids = ",".join(sorted({message.user_id for message in day_messages}))
+        participants = participant_ids.split(",")
         items.append(
             MemoryItem(
                 content=content,
@@ -66,7 +69,9 @@ def build_memory_items(messages: list[ChatMessage], *, group_by: str = "day") ->
                     "end_timestamp": day_messages[-1].timestamp,
                     "message_count": str(len(day_messages)),
                 },
-                tags=[*COMMON_TAGS, *(f"user:{user_id}" for user_id in participant_ids.split(","))],
+                timestamp=day_messages[0].timestamp,
+                participants=participants,
+                tags=[*COMMON_TAGS, *(f"user:{user_id}" for user_id in participants)],
             )
         )
     return items
@@ -98,7 +103,13 @@ class HindsightBackend:
     def write(self, items: list[MemoryItem]) -> None:
         payload = {
             "items": [
-                {"text": item.content, "metadata": item.metadata, "tags": item.tags}
+                {
+                    "text": item.content,
+                    "metadata": item.metadata,
+                    "tags": item.tags,
+                    "timestamp": item.timestamp,
+                    "participants": item.participants,
+                }
                 for item in items
             ],
             "async": True,

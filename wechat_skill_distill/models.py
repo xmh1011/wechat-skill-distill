@@ -18,4 +18,6 @@ class ChatMessage:
 class MemoryItem:
     content: str
     metadata: dict[str, str]
+    timestamp: str
+    participants: list[str]
     tags: list[str] = field(default_factory=list)

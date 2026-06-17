@@ -99,6 +99,8 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertEqual(rows[0]["metadata"]["userID"], "user-a")
         self.assertEqual(rows[1]["metadata"]["userID"], "user-b")
         self.assertIn("timestamp", rows[0]["metadata"])
+        self.assertEqual(rows[0]["timestamp"], "2026-04-18T01:51:44+08:00")
+        self.assertEqual(rows[0]["participants"], ["user-a"])
 
 
 if __name__ == "__main__":

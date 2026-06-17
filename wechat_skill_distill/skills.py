@@ -86,11 +86,48 @@ def _sample_lines(user_messages: list[ChatMessage], limit: int = 10) -> list[str
     return [short[round(i * step)] for i in range(limit)]
 
 
+def _ratio(part: int, total: int) -> float:
+    return part / total if total else 0.0
+
+
+def _rhythm_label(avg_len: float, short_ratio: float, multiline_ratio: float) -> str:
+    if multiline_ratio >= 0.35:
+        return "会把想法拆成多行，适合保留分段气泡感"
+    if short_ratio >= 0.7:
+        return "偏短句快回，先接住对方再补一句判断"
+    if avg_len >= 45:
+        return "偏长句展开，常把背景和判断放在同一条里"
+    return "长短混合，回复里通常有承接和轻量展开"
+
+
+def _expressive_signal(user_messages: list[ChatMessage]) -> str:
+    total = len(user_messages)
+    laughter_count = sum(1 for message in user_messages if re.search(r"哈{2,}|笑死|hhh+", message.content, re.IGNORECASE))
+    emoji_count = sum(1 for message in user_messages if re.search(r"[\U0001F300-\U0001FAFF]", message.content))
+    punctuation_count = sum(1 for message in user_messages if re.search(r"[!?！？~～…]", message.content))
+    signals = []
+    if laughter_count:
+        signals.append(f"笑声/玩笑语气约 {laughter_count / total:.0%}")
+    if emoji_count:
+        signals.append(f"emoji 约 {emoji_count / total:.0%}")
+    if punctuation_count:
+        signals.append(f"强调符号约 {punctuation_count / total:.0%}")
+    return "；".join(signals) if signals else "较少使用明显表情符号，整体更克制"
+
+
 def _style_summary(user_messages: list[ChatMessage]) -> str:
     lengths = [len(m.content) for m in user_messages] or [0]
     avg_len = sum(lengths) / len(lengths)
-    short_ratio = sum(1 for length in lengths if length <= 20) / len(lengths)
-    return f"- 平均消息长度约 {avg_len:.1f} 字；短消息占比约 {short_ratio:.0%}。\n- 常见表达：{'、'.join(_common_phrases(user_messages)) or '样本不足'}。"
+    total = len(user_messages)
+    short_ratio = _ratio(sum(1 for length in lengths if length <= 20), len(lengths))
+    question_ratio = _ratio(sum(1 for message in user_messages if re.search(r"[?？]", message.content)), total)
+    multiline_ratio = _ratio(sum(1 for message in user_messages if "\n" in message.content), total)
+    return (
+        f"- 平均消息长度约 {avg_len:.1f} 字；短消息占比约 {short_ratio:.0%}。\n"
+        f"- 表达节奏：{_rhythm_label(avg_len, short_ratio, multiline_ratio)}；问句占比约 {question_ratio:.0%}；多行消息占比约 {multiline_ratio:.0%}。\n"
+        f"- 表情/符号倾向：{_expressive_signal(user_messages)}。\n"
+        f"- 常见表达：{'、'.join(_common_phrases(user_messages)) or '样本不足'}。"
+    )
 
 
 def _one_line(value: object, fallback: str) -> str:

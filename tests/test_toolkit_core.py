@@ -100,6 +100,74 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertNotIn("记忆", skills["user-a"])
         self.assertNotIn("HINDSIGHT_API_KEY", skills["user-a"])
 
+    def test_generated_skills_include_richer_generic_style_signals(self) -> None:
+        export = {
+            "messages": [
+                {
+                    "localId": 1,
+                    "formattedTime": "2026-04-18 09:00:00",
+                    "type": "文本消息",
+                    "content": "哈哈哈这个也太离谱了😂",
+                    "isSend": 0,
+                    "senderUsername": "wxid_a",
+                    "senderDisplayName": "Participant A",
+                },
+                {
+                    "localId": 2,
+                    "formattedTime": "2026-04-18 09:01:00",
+                    "type": "文本消息",
+                    "content": "你今天几点到？",
+                    "isSend": 0,
+                    "senderUsername": "wxid_a",
+                    "senderDisplayName": "Participant A",
+                },
+                {
+                    "localId": 3,
+                    "formattedTime": "2026-04-18 09:02:00",
+                    "type": "文本消息",
+                    "content": "我先想想\n晚点和你说",
+                    "isSend": 0,
+                    "senderUsername": "wxid_a",
+                    "senderDisplayName": "Participant A",
+                },
+                {
+                    "localId": 4,
+                    "formattedTime": "2026-04-18 09:03:00",
+                    "type": "文本消息",
+                    "content": "可以可以~",
+                    "isSend": 0,
+                    "senderUsername": "wxid_a",
+                    "senderDisplayName": "Participant A",
+                },
+                {
+                    "localId": 5,
+                    "formattedTime": "2026-04-18 09:04:00",
+                    "type": "文本消息",
+                    "content": "我也觉得",
+                    "isSend": 1,
+                    "senderUsername": "wxid_b",
+                    "senderDisplayName": "Participant B",
+                },
+            ]
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "chat.json"
+            path.write_text(json.dumps(export, ensure_ascii=False), encoding="utf-8")
+            messages = load_weflow_messages(
+                path,
+                participants={
+                    "0": {"user_id": "user-a", "name": "Participant A"},
+                    "1": {"user_id": "user-b", "name": "Participant B"},
+                },
+            )
+
+        skill = generate_skill_texts(messages, include_memory=False)["user-a"]
+
+        self.assertIn("问句占比约", skill)
+        self.assertIn("多行消息占比约", skill)
+        self.assertIn("表情/符号倾向：", skill)
+        self.assertIn("表达节奏：", skill)
+
     def test_generate_memory_chat_skills_include_backend_recall(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "chat.json"
@@ -673,6 +741,14 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertNotIn("页面能加载本地 `memory.jsonl` 并在回复时展示命中结果", text)
         self.assertNotIn("本地检索结果和服务端 recall 结果", text)
         self.assertNotIn("JSONL contract 说明宿主 agent 需要先做本地检索再注入上下文", text)
+
+    def test_prd_describes_richer_generic_style_signals(self) -> None:
+        text = Path("PRD.md").read_text(encoding="utf-8")
+
+        self.assertIn("问句占比", text)
+        self.assertIn("多行消息占比", text)
+        self.assertIn("表情/符号倾向", text)
+        self.assertIn("表达节奏", text)
 
     def test_docs_keep_memory_backend_responsible_for_ranking(self) -> None:
         readme = Path("README.md").read_text(encoding="utf-8")

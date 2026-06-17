@@ -17,3 +17,6 @@ wechat-skill-distill = "wechat_skill_distill.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["wechat_skill_distill*"]
+
+[tool.setuptools.package-data]
+wechat_skill_distill = ["web/*"]

@@ -113,6 +113,22 @@ generated-chat-skills/Participant B.chat-memory.skill
 - memory backend 实现统一 `MemoryBackend.write(items)`。
 - skill generator 不依赖具体来源。
 
+### S6 本地前端模拟聊天
+
+用户希望在生成 skill 后立即试聊：
+
+```bash
+wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765
+```
+
+要求：
+
+- 页面能加载一个或多个 `.skill` / `.chat-memory.skill` 文件。
+- 页面能加载本地 `memory.jsonl` 并在回复时展示命中结果。
+- 页面提供 persona 选择、聊天窗口、输入框、转录导出。
+- MVP 使用本地 mock 引擎，不把 API key 暴露到页面，也不默认调用外部模型。
+- 后续版本支持 OpenAI-compatible server-side proxy 和真实记忆 recall。
+
 ## 5. 信息架构
 
 ### 5.1 输入
@@ -232,6 +248,16 @@ generated-chat-skills/Participant B.chat-memory.skill
 - 新 parser 不应修改 memory backend。
 - 复杂能力先沉淀到 PRD/roadmap，再进入实现。
 
+### FR11 Chat UI
+
+- 命令：`chat-ui`。
+- 默认监听 `127.0.0.1:8765`，支持 `--host` 和 `--port`。
+- 使用 package 内置静态资源，不要求 Node.js 或前端构建链。
+- 支持加载多个 skill 文件并切换 persona。
+- 支持加载 JSONL 记忆文件，按输入关键词做本地检索并展示 hits。
+- 支持导出模拟聊天 transcript。
+- 当前 mock engine 只用于本地体验验证，不把模拟内容写回记忆库。
+
 ## 7. CLI 设计
 
 ```bash
@@ -241,6 +267,7 @@ wechat-skill-distill inspect --input chat.json --config config.local.json
 wechat-skill-distill extract-skills --input chat.json --out-dir generated-skills --config config.local.json
 wechat-skill-distill import --backend jsonl --input chat.json --output exports/memory.jsonl --dry-run --config config.local.json
 wechat-skill-distill generate-chat-skills --input chat.json --out-dir generated-chat-skills --memory-backend jsonl --config config.local.json
+wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765
 ```
 
 后续命令：
@@ -266,6 +293,8 @@ wechat-skill-distill init --wizard
 - 生成的 `.chat-memory.skill` 包含 `## 记忆检索`。
 - `wechat-skill-distill import --backend jsonl --input examples/chat.json --output /tmp/wsd/memory.jsonl --dry-run --config config.example.json` 生成 JSONL。
 - JSONL 每行包含 `timestamp` 和 `participants` 顶层字段。
+- `wechat-skill-distill chat-ui --host 127.0.0.1 --port <free-port>` 能启动本地前端页面。
+- chat UI 静态资源包含 `index.html`、`app.js`、`styles.css`，安装后可通过 package data 访问。
 - 仓库中不得出现真实 API key、特定私人聊天人名或私人聊天文件依赖。
 
 ### 下一阶段目标
@@ -282,12 +311,12 @@ wechat-skill-distill init --wizard
 - WeFlow parser。
 - 无记忆 skill 与有记忆 chat-memory skill 分离。
 - JSONL、generic HTTP、Hindsight、Mem0 adapter。
-- README、config、inspect、doctor、单元测试。
+- README、config、inspect、doctor、chat UI、单元测试。
 
 ### M2 产品可用性增强
 
 - 初始化向导。
-- inspect/evaluate/redact。
+- evaluate/redact。
 - profile.json 输出。
 - 更明确的错误恢复建议。
 

@@ -7,6 +7,7 @@ from wechat_skill_distill.inspection import inspect_weflow_export
 from wechat_skill_distill.memory import build_memory_items, write_jsonl
 from wechat_skill_distill.skills import generate_skill_texts, write_skill_files
 from wechat_skill_distill.weflow import load_weflow_messages
+from wechat_skill_distill.web_server import web_root
 
 
 class ToolkitCoreTest(unittest.TestCase):
@@ -147,6 +148,12 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertEqual(report["participants"][0]["user_id"], "user-a")
         self.assertEqual(report["unmapped_sender_keys"], [])
         self.assertIn("wxid_a", report["observed_sender_keys"])
+
+    def test_chat_ui_assets_are_packaged(self) -> None:
+        root = web_root()
+        self.assertTrue((root / "index.html").exists())
+        self.assertTrue((root / "app.js").exists())
+        self.assertTrue((root / "styles.css").exists())
 
 
 if __name__ == "__main__":

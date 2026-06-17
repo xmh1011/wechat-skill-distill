@@ -16,6 +16,7 @@ from .memory import (
 )
 from .skills import generate_skill_texts, write_skill_files
 from .weflow import load_weflow_messages
+from .web_server import serve_chat_ui
 
 
 def load_config(path: Path | None) -> dict:
@@ -169,6 +170,11 @@ def cmd_import(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_chat_ui(args: argparse.Namespace) -> int:
+    serve_chat_ui(args.host, args.port)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="wechat-skill-distill")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -225,6 +231,11 @@ def build_parser() -> argparse.ArgumentParser:
     imp.add_argument("--dry-run", action="store_true")
     imp.add_argument("--insecure", action="store_true")
     imp.set_defaults(func=cmd_import)
+
+    chat_ui = sub.add_parser("chat-ui", help="serve the local chat simulator UI")
+    chat_ui.add_argument("--host", default="127.0.0.1")
+    chat_ui.add_argument("--port", default=8765, type=int)
+    chat_ui.set_defaults(func=cmd_chat_ui)
     return parser
 
 

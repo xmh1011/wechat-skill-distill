@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>wechat-skill-distill Chat</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div>
+          <h1>Chat Simulator</h1>
+          <p id="runtimeStatus">Local mock · no network calls</p>
+        </div>
+        <div class="top-actions">
+          <button id="loadDemo" class="secondary" type="button" title="Load demo">
+            <span aria-hidden="true">▶</span>
+            Demo
+          </button>
+          <button id="clearChat" class="secondary" type="button" title="Clear chat">
+            <span aria-hidden="true">⌫</span>
+            Clear
+          </button>
+          <button id="exportChat" class="primary" type="button" title="Export transcript">
+            <span aria-hidden="true">⇩</span>
+            Export
+          </button>
+        </div>
+      </header>
+
+      <aside class="sidebar">
+        <section class="panel">
+          <h2>Assets</h2>
+          <label class="file-pick">
+            <span>Skill files</span>
+            <input id="skillFiles" type="file" accept=".skill,.md,.txt" multiple />
+          </label>
+          <label class="file-pick">
+            <span>Memory JSONL</span>
+            <input id="memoryFile" type="file" accept=".jsonl,.json,.txt" />
+          </label>
+        </section>
+
+        <section class="panel">
+          <h2>Persona</h2>
+          <select id="personaSelect" aria-label="Persona"></select>
+          <dl class="facts">
+            <div>
+              <dt>Mode</dt>
+              <dd id="modeValue">No skill</dd>
+            </div>
+            <div>
+              <dt>User ID</dt>
+              <dd id="userIdValue">-</dd>
+            </div>
+            <div>
+              <dt>Samples</dt>
+              <dd id="sampleCountValue">0</dd>
+            </div>
+            <div>
+              <dt>Memory</dt>
+              <dd id="memoryCountValue">0 rows</dd>
+            </div>
+          </dl>
+        </section>
+      </aside>
+
+      <main class="chat-shell">
+        <div id="chatLog" class="chat-log" aria-live="polite"></div>
+        <form id="composer" class="composer">
+          <textarea id="messageInput" rows="2" placeholder="输入一条消息" aria-label="Message"></textarea>
+          <button class="primary icon-only" type="submit" title="Send">
+            <span aria-hidden="true">↑</span>
+          </button>
+        </form>
+      </main>
+
+      <aside class="inspector">
+        <section class="panel">
+          <h2>Style</h2>
+          <div id="styleTokens" class="tokens"></div>
+        </section>
+        <section class="panel grow">
+          <h2>Memory Hits</h2>
+          <div id="memoryHits" class="hit-list"></div>
+        </section>
+      </aside>
+    </div>
+
+    <template id="messageTemplate">
+      <article class="message">
+        <div class="bubble"></div>
+      </article>
+    </template>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

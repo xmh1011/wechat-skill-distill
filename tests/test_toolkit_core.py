@@ -323,6 +323,31 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertEqual(public[0]["userId"], "team/a 01")
         self.assertEqual(report["skills"][0]["user_id"], "team/a 01")
 
+    def test_skill_metadata_parser_ignores_body_lines_that_look_like_frontmatter(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "legacy.chat-memory.skill"
+            path.write_text(
+                "# Legacy Title Chat Skill\n\n"
+                "模拟 userID=legacy-user 的回复。\n\n"
+                "## 说话风格画像\n\n"
+                "- 常见表达：可以。\n\n"
+                "## 真实样本\n\n"
+                "```text\n"
+                "display_name: Wrong Name\n"
+                "user_id: wrong-user\n"
+                "```\n",
+                encoding="utf-8",
+            )
+            assets = load_skill_assets([path])
+
+            public = public_skill_assets(assets)
+            report = evaluate_skills([path])
+
+        self.assertEqual(public[0]["name"], "Legacy Title")
+        self.assertEqual(report["skills"][0]["name"], "Legacy Title")
+        self.assertEqual(public[0]["userId"], "legacy-user")
+        self.assertEqual(report["skills"][0]["user_id"], "legacy-user")
+
     def test_chat_payload_resolves_preloaded_skill_server_side(self) -> None:
         assets = [
             {
@@ -617,7 +642,9 @@ class ToolkitCoreTest(unittest.TestCase):
 
         self.assertIn("前端摘要和评估报告使用同一套 skill metadata 解析规则", readme)
         self.assertIn("优先使用 frontmatter 的 display_name 和 user_id", readme)
+        self.assertIn("只解析文件开头的 frontmatter block", readme)
         self.assertIn("服务端 public persona 摘要和 evaluate-skills 必须复用同一套 skill metadata parser", prd)
+        self.assertIn("metadata parser 只读取文件开头 frontmatter block", prd)
 
     def test_docs_describe_safe_skill_artifact_identity_metadata(self) -> None:
         readme = Path("README.md").read_text(encoding="utf-8")

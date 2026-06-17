@@ -14,8 +14,23 @@ class SkillMeta:
     sample_count: int
 
 
+def frontmatter_block(text: str) -> str:
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return ""
+    body = []
+    for line in lines[1:]:
+        if line.strip() == "---":
+            return "\n".join(body)
+        body.append(line)
+    return ""
+
+
 def frontmatter_value(text: str, key: str) -> str | None:
-    match = re.search(rf"^{re.escape(key)}:\s*(.+?)\s*$", text, re.MULTILINE)
+    block = frontmatter_block(text)
+    if not block:
+        return None
+    match = re.search(rf"^{re.escape(key)}:\s*(.+?)\s*$", block, re.MULTILINE)
     if not match:
         return None
     value = match.group(1).strip()

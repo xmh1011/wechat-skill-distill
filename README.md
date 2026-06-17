@@ -183,6 +183,18 @@ wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765
 
 Open the printed URL, load one or more `.skill` / `.chat-memory.skill` files, optionally load a `memory.jsonl`, then chat with the selected persona. The current simulator uses a local mock engine and does not call a model provider.
 
+## Evaluate Skills
+
+```bash
+wechat-skill-distill evaluate-skills \
+  --skills generated-skills generated-chat-skills \
+  --input examples/chat.json \
+  --config config.local.json \
+  --output reports/quality.json
+```
+
+The evaluator checks required sections, style-only vs memory-aware file type rules, userID markers, participant-name leakage, and verbatim source text outside the sample section. Use `--fail-on-issue` in automation.
+
 ## Safety
 
 - `.env`, raw chat exports, generated exports, logs, and runs are ignored.
@@ -199,6 +211,7 @@ wechat-skill-distill extract-skills --input examples/chat.json --out-dir generat
 wechat-skill-distill generate-chat-skills --input examples/chat.json --out-dir generated-chat-skills --memory-backend jsonl --config config.local.json
 wechat-skill-distill import --backend jsonl --input examples/chat.json --output exports/memory.jsonl --dry-run --config config.local.json
 wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765
+wechat-skill-distill evaluate-skills --skills generated-skills generated-chat-skills --input examples/chat.json --config config.local.json
 ```
 
 ## Product Notes

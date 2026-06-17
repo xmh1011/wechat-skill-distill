@@ -103,7 +103,8 @@ generated-chat-skills/Participant B.chat-memory.skill
 
 - `inspect` 在导入前输出消息总数、可导入数、跳过原因、日期范围、参与者和消息类型分布。
 - `doctor` 检查输入文件、参与者映射、环境变量和输出目录。
-- 后续版本提供 `evaluate-skills`，检查风格覆盖率、样本泄漏、对方身份混入、隐私风险和记忆字段完整性。
+- `evaluate-skills` 检查必需章节、文件类型规则、对方身份混入、样本文本泄漏和 userID 标记。
+- 后续版本增强隐私风险和记忆字段完整性评估。
 
 ### S5 扩展新的来源或后端
 
@@ -258,6 +259,16 @@ wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765
 - 支持导出模拟聊天 transcript。
 - 当前 mock engine 只用于本地体验验证，不把模拟内容写回记忆库。
 
+### FR12 Skill 质量评估
+
+- 命令：`evaluate-skills`。
+- 支持一个或多个 skill 文件或目录。
+- 可选 `--input` + participant config，用原始聊天记录检查参与者名称混入和样本文本泄漏。
+- 检查 `.skill` 不能包含记忆检索章节或后端 key 名称。
+- 检查 `.chat-memory.skill` 必须包含 `## 记忆检索`。
+- 输出文本报告、`--json` 结构化报告，或 `--output` 保存 JSON。
+- 支持 `--fail-on-issue` 作为 CI/自动化质量门禁。
+
 ## 7. CLI 设计
 
 ```bash
@@ -268,6 +279,7 @@ wechat-skill-distill extract-skills --input chat.json --out-dir generated-skills
 wechat-skill-distill import --backend jsonl --input chat.json --output exports/memory.jsonl --dry-run --config config.local.json
 wechat-skill-distill generate-chat-skills --input chat.json --out-dir generated-chat-skills --memory-backend jsonl --config config.local.json
 wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765
+wechat-skill-distill evaluate-skills --skills generated-skills generated-chat-skills --input chat.json --config config.local.json
 ```
 
 后续命令：
@@ -295,11 +307,11 @@ wechat-skill-distill init --wizard
 - JSONL 每行包含 `timestamp` 和 `participants` 顶层字段。
 - `wechat-skill-distill chat-ui --host 127.0.0.1 --port <free-port>` 能启动本地前端页面。
 - chat UI 静态资源包含 `index.html`、`app.js`、`styles.css`，安装后可通过 package data 访问。
+- `wechat-skill-distill evaluate-skills --skills <generated-skill-dir> --input examples/chat.json --config config.example.json --json` 输出合法 JSON，并能报告 passed/failed/warnings。
 - 仓库中不得出现真实 API key、特定私人聊天人名或私人聊天文件依赖。
 
 ### 下一阶段目标
 
-- 增加 `evaluate-skills`，自动检查风格覆盖和混入风险。
 - 增加 redaction policy。
 - 增加 parser/backend 注册机制。
 - 增加更丰富的风格画像 JSON。
@@ -311,12 +323,12 @@ wechat-skill-distill init --wizard
 - WeFlow parser。
 - 无记忆 skill 与有记忆 chat-memory skill 分离。
 - JSONL、generic HTTP、Hindsight、Mem0 adapter。
-- README、config、inspect、doctor、chat UI、单元测试。
+- README、config、inspect、doctor、chat UI、evaluate-skills、单元测试。
 
 ### M2 产品可用性增强
 
 - 初始化向导。
-- evaluate/redact。
+- redact。
 - profile.json 输出。
 - 更明确的错误恢复建议。
 

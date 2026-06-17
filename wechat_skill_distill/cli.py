@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import sys
 
+from .evaluation import collect_skill_paths, evaluate_skills
 from .inspection import inspect_weflow_export
 from .memory import (
     GenericHttpBackend,
@@ -175,6 +176,39 @@ def cmd_chat_ui(args: argparse.Namespace) -> int:
     return 0
 
 
+def _print_evaluation_report(report: dict) -> None:
+    summary = report["summary"]
+    print(f"skills: files={summary['files']} passed={summary['passed']} failed={summary['failed']} warnings={summary['warnings']}")
+    for item in report["skills"]:
+        status = "PASS" if item["passed"] else "FAIL"
+        print(f"{status} {item['path']} ({item['kind']}, user_id={item['user_id'] or '-'})")
+        for issue in item["issues"]:
+            print(f"  issue: {issue}")
+        for warning in item["warnings"]:
+            print(f"  warning: {warning}")
+
+
+def cmd_evaluate_skills(args: argparse.Namespace) -> int:
+    config = load_config(args.config)
+    participants = load_participants(args.participants, config)
+    messages = None
+    if args.input:
+        messages = load_weflow_messages(args.input, participants=participants)
+    paths: list[Path] = []
+    for skill_path in args.skills:
+        paths.extend(collect_skill_paths(skill_path))
+    report = evaluate_skills(paths, messages=messages)
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(args.output)
+    elif args.json:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        _print_evaluation_report(report)
+    return 1 if args.fail_on_issue and report["summary"]["failed"] else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="wechat-skill-distill")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -236,6 +270,16 @@ def build_parser() -> argparse.ArgumentParser:
     chat_ui.add_argument("--host", default="127.0.0.1")
     chat_ui.add_argument("--port", default=8765, type=int)
     chat_ui.set_defaults(func=cmd_chat_ui)
+
+    evaluate = sub.add_parser("evaluate-skills", help="evaluate generated skill files")
+    evaluate.add_argument("--skills", required=True, nargs="+", type=Path)
+    evaluate.add_argument("--input", type=Path)
+    evaluate.add_argument("--config", type=Path)
+    evaluate.add_argument("--participants", type=Path)
+    evaluate.add_argument("--json", action="store_true")
+    evaluate.add_argument("--output", type=Path)
+    evaluate.add_argument("--fail-on-issue", action="store_true")
+    evaluate.set_defaults(func=cmd_evaluate_skills)
     return parser
 
 

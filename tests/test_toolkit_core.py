@@ -3,6 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
+from wechat_skill_distill.evaluation import collect_skill_paths, evaluate_skills
 from wechat_skill_distill.inspection import inspect_weflow_export
 from wechat_skill_distill.memory import build_memory_items, write_jsonl
 from wechat_skill_distill.skills import generate_skill_texts, write_skill_files
@@ -154,6 +155,42 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertTrue((root / "index.html").exists())
         self.assertTrue((root / "app.js").exists())
         self.assertTrue((root / "styles.css").exists())
+
+    def test_evaluate_skills_reports_pass_and_identity_leakage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            chat_path = root / "chat.json"
+            skills_dir = root / "skills"
+            chat_path.write_text(json.dumps(self.sample_export(), ensure_ascii=False), encoding="utf-8")
+            messages = load_weflow_messages(
+                chat_path,
+                participants={
+                    "0": {"user_id": "user-a", "name": "Participant A"},
+                    "1": {"user_id": "user-b", "name": "Participant B"},
+                },
+            )
+            skills = generate_skill_texts(messages, include_memory=False)
+            written = write_skill_files(skills, skills_dir, suffix="skill")
+
+            report = evaluate_skills(written, messages=messages)
+            leaked = skills_dir / "Participant A.skill"
+            leaked.write_text(leaked.read_text(encoding="utf-8") + "\nParticipant B\n", encoding="utf-8")
+            leaked_report = evaluate_skills([leaked], messages=messages)
+
+        self.assertEqual(report["summary"]["failed"], 0)
+        self.assertEqual(report["summary"]["passed"], 2)
+        self.assertEqual(leaked_report["summary"]["failed"], 1)
+        self.assertIn("contains other participant names", leaked_report["skills"][0]["issues"][0])
+
+    def test_collect_skill_paths_deduplicates_chat_memory_suffix(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "A.skill").write_text("plain", encoding="utf-8")
+            (root / "B.chat-memory.skill").write_text("chat", encoding="utf-8")
+
+            paths = collect_skill_paths(root)
+
+        self.assertEqual([path.name for path in paths], ["A.skill", "B.chat-memory.skill"])
 
 
 if __name__ == "__main__":

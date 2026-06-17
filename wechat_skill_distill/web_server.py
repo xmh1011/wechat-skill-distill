@@ -38,6 +38,46 @@ def _truthy(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _as_string_set(value: Any) -> set[str]:
+    if value is None:
+        return set()
+    if isinstance(value, (list, tuple, set)):
+        return {str(item).strip() for item in value if str(item).strip()}
+    text = str(value).strip()
+    return {text} if text else set()
+
+
+def _hit_matches_persona(hit: dict[str, Any], user_id: str) -> bool:
+    if not user_id:
+        return True
+    metadata = hit.get("metadata") or {}
+    metadata = metadata if isinstance(metadata, Mapping) else {}
+    scoped_user_ids: set[str] = set()
+    for key in ("userID", "user_id", "userId"):
+        scoped_user_ids.update(_as_string_set(metadata.get(key)))
+        scoped_user_ids.update(_as_string_set(hit.get(key)))
+    if scoped_user_ids and user_id not in scoped_user_ids:
+        return False
+    scoped_participants: set[str] = set()
+    scoped_participants.update(_as_string_set(metadata.get("participants")))
+    scoped_participants.update(_as_string_set(hit.get("participants")))
+    if scoped_participants and user_id not in scoped_participants:
+        return False
+    raw_tags = []
+    for value in (hit.get("tags"), metadata.get("tags")):
+        raw_tags.extend(_as_string_set(value))
+    user_tags = {tag.removeprefix("user:") for tag in raw_tags if tag.startswith("user:")}
+    if user_tags and user_id not in user_tags:
+        return False
+    return True
+
+
+def _filter_hits_for_persona(hits: list[dict[str, Any]], payload: Mapping[str, Any]) -> list[dict[str, Any]]:
+    persona = payload.get("persona") or {}
+    user_id = str(persona.get("userId") or persona.get("user_id") or "").strip() if isinstance(persona, Mapping) else ""
+    return [hit for hit in hits if _hit_matches_persona(hit, user_id)]
+
+
 def build_enriched_chat_payload(payload: dict[str, Any], server_hits: list[dict[str, Any]], *, env: Mapping[str, str] | None = None) -> tuple[dict[str, Any], dict[str, int]]:
     current_env = env or os.environ
     local_hits: list[dict[str, Any]] = []
@@ -45,8 +85,10 @@ def build_enriched_chat_payload(payload: dict[str, Any], server_hits: list[dict[
         raw_hits = payload.get("memory_hits")
         if isinstance(raw_hits, list):
             local_hits = [hit for hit in raw_hits if isinstance(hit, dict)]
-    enriched = {**payload, "memory_hits": [*local_hits, *server_hits]}
-    return enriched, {"server_hits": len(server_hits), "local_hits": len(local_hits)}
+    filtered_local_hits = _filter_hits_for_persona(local_hits, payload)
+    filtered_server_hits = _filter_hits_for_persona(server_hits, payload)
+    enriched = {**payload, "memory_hits": [*filtered_local_hits, *filtered_server_hits]}
+    return enriched, {"server_hits": len(filtered_server_hits), "local_hits": len(filtered_local_hits)}
 
 
 class ChatUIHandler(SimpleHTTPRequestHandler):

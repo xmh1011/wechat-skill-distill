@@ -198,7 +198,7 @@ wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765 --env-file .env --skil
 
 Open the printed URL and chat with the preloaded persona. Pass `--skill` multiple times to preload multiple personas. The page calls the local `chat-ui` server, and the server calls the configured model provider. API keys stay in `.env` or environment variables and are never sent to the browser.
 
-If a runtime memory backend is configured, `/api/chat` recalls relevant memories before calling the model and injects those hits with the selected skill. Raw memory hits are not returned to the browser, and the browser does not upload memory files or run its own retrieval. The UI only shows whether related context was referenced. The recall adapter stays generic; factual boundaries are enforced by the generated `.chat-memory.skill` and the server-side companion prompt.
+If a runtime memory backend is configured, `/api/chat` recalls relevant memories before calling the model and injects those hits with the selected skill. Raw memory hits are not returned to the browser, and the browser does not upload memory files or run its own retrieval. 服务端会按 metadata、participants 和 user:<id> tags 过滤明确属于其他 user 的命中；不基于记忆文本做业务关键词过滤。 The UI only shows whether related context was referenced. The recall adapter stays generic; factual boundaries are enforced by the generated `.chat-memory.skill` and the server-side companion prompt.
 
 Recall backend selection defaults to `auto`: Hindsight is used when `HINDSIGHT_API_KEY` is present, otherwise Generic HTTP when `MEMORY_RECALL_URL` is present, otherwise Mem0 when `MEM0_API_KEY` is present, otherwise JSONL when `JSONL_MEMORY_PATH` is present. Set `WSD_MEMORY_RECALL_BACKEND=off` to disable server-side recall.
 

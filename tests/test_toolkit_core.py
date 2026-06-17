@@ -531,6 +531,15 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertNotIn("WSD_MEMORY_QUERY_VARIANTS=3", readme)
         self.assertNotIn("WSD_MEMORY_QUERY_VARIANTS=3", env_example)
 
+    def test_docs_describe_memory_hit_identity_filtering(self) -> None:
+        readme = Path("README.md").read_text(encoding="utf-8")
+        prd = Path("PRD.md").read_text(encoding="utf-8")
+
+        self.assertIn("服务端会按 metadata、participants 和 user:<id> tags 过滤明确属于其他 user 的命中", readme)
+        self.assertIn("不基于记忆文本做业务关键词过滤", readme)
+        self.assertIn("模型请求前必须过滤明确属于其他 userID 的 memory hits", prd)
+        self.assertIn("过滤只基于 metadata、participants 和 user:<id> tags", prd)
+
     def test_docs_describe_safe_skill_artifact_identity_metadata(self) -> None:
         readme = Path("README.md").read_text(encoding="utf-8")
         prd = Path("PRD.md").read_text(encoding="utf-8")
@@ -706,6 +715,30 @@ class ToolkitCoreTest(unittest.TestCase):
 
         self.assertEqual([hit["content"] for hit in enriched["memory_hits"]], ["显式允许的本地事实", "服务端召回的事实"])
         self.assertEqual(counts, {"server_hits": 1, "local_hits": 1})
+
+    def test_chat_server_filters_memory_hits_scoped_to_other_users(self) -> None:
+        payload = {
+            "message": "你之前说过什么",
+            "persona": {"name": "Participant A", "userId": "user-a"},
+            "memory_hits": [
+                {"content": "客户端里别人的事实", "metadata": {"userID": "user-b"}},
+                {"content": "客户端当前人的事实", "metadata": {"userID": "user-a"}},
+            ],
+        }
+        server_hits = [
+            {"content": "服务端当前人的事实", "metadata": {"userID": "user-a"}},
+            {"content": "服务端别人的事实", "metadata": {"userID": "user-b"}},
+            {"content": "服务端别人的标签事实", "tags": ["user:user-b"]},
+            {"content": "服务端未标注事实"},
+        ]
+
+        enriched, counts = build_enriched_chat_payload(payload, server_hits, env={"WSD_ALLOW_CLIENT_MEMORY_HITS": "1"})
+
+        self.assertEqual(
+            [hit["content"] for hit in enriched["memory_hits"]],
+            ["客户端当前人的事实", "服务端当前人的事实", "服务端未标注事实"],
+        )
+        self.assertEqual(counts, {"server_hits": 2, "local_hits": 1})
 
     def test_openai_compatible_chat_call_uses_server_side_protocol(self) -> None:
         with patch("wechat_skill_distill.model_client.requests.post") as post:

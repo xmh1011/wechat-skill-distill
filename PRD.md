@@ -270,6 +270,7 @@ wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765 --env-file .env
 - 前端不上传记忆文件、不做浏览器侧检索；JSONL 记忆通过服务端 `JSONL_MEMORY_PATH` 接入。
 - 支持 backend-neutral server-side recall：`/api/chat` 可通过 Hindsight、Generic HTTP、Mem0 或 JSONL 在模型调用前自动检索相关记忆。
 - `/api/chat` 不向浏览器返回 raw memory hits，只返回召回状态摘要。
+- 模型请求前必须过滤明确属于其他 userID 的 memory hits；过滤只基于 metadata、participants 和 user:<id> tags，不基于记忆文本做业务关键词判断。
 - recall query 必须包含当前用户原话、最近用户追问和目标 persona；轻量寒暄默认不召回。
 - 后端 adapter 默认单 query，并必须保留记忆服务自己的排序；排序和 rerank 交给记忆后端，不在 harness 维护业务词表或二次排序规则。
 - Hindsight recall 默认先用 `user:<id>` + `all_strict` 严格检索，无结果再 fallback 到 conversation tags；其他后端使用统一 query/user/persona/history 契约。

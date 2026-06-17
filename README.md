@@ -198,6 +198,8 @@ wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765 --env-file .env --skil
 
 Open the printed URL and chat with the preloaded persona. Pass `--skill` multiple times to preload multiple personas. The page calls the local `chat-ui` server, and the server calls the configured model provider. API keys stay in `.env` or environment variables and are never sent to the browser.
 
+多 persona 模拟时，每个 persona 维护独立对话历史和本轮记忆状态；切换对象不会把上一位对象的 history 传给下一位。导出对话时只导出当前 persona 的 transcript 和基础身份摘要。
+
 浏览器只接收 persona 摘要和 skill_id，不接收完整 skill 文本；聊天请求只提交 skill_id，完整 skill 由本地服务端在调用模型前注入。
 
 If a runtime memory backend is configured, `/api/chat` recalls relevant memories before calling the model and injects those hits with the selected skill. Raw memory hits are not returned to the browser, and the browser does not upload memory files or run its own retrieval. 服务端会按 metadata、participants 和 user:<id> tags 过滤明确属于其他 user 的命中；不基于记忆文本做业务关键词过滤。 The UI only shows whether related context was referenced. The recall adapter stays generic; factual boundaries are enforced by the generated `.chat-memory.skill` and the server-side companion prompt.

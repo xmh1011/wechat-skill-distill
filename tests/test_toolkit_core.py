@@ -646,6 +646,14 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("服务端 public persona 摘要和 evaluate-skills 必须复用同一套 skill metadata parser", prd)
         self.assertIn("metadata parser 只读取文件开头 frontmatter block", prd)
 
+    def test_docs_describe_persona_scoped_chat_sessions(self) -> None:
+        readme = Path("README.md").read_text(encoding="utf-8")
+        prd = Path("PRD.md").read_text(encoding="utf-8")
+
+        self.assertIn("每个 persona 维护独立对话历史", readme)
+        self.assertIn("切换对象不会把上一位对象的 history 传给下一位", readme)
+        self.assertIn("多 persona UI 必须按 skill_id 隔离 transcript 和 recall 状态", prd)
+
     def test_docs_describe_safe_skill_artifact_identity_metadata(self) -> None:
         readme = Path("README.md").read_text(encoding="utf-8")
         prd = Path("PRD.md").read_text(encoding="utf-8")
@@ -784,7 +792,7 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("persona.name", source)
         self.assertIn("normalizePersona", source)
         self.assertIn("persona.sampleCount", source)
-        self.assertIn("skill_id: persona.id", source)
+        self.assertIn("skill_id: personaId", source)
         self.assertIn("已配置 ${persona.sampleCount} 条风格样本", source)
         self.assertNotIn("persona.raw", source)
         self.assertNotIn("parseSkill", source)
@@ -804,6 +812,28 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertNotIn("skill: persona.raw", source)
         self.assertNotIn("raw: text", source)
         self.assertIn("记忆由本地服务端按配置检索", source)
+
+    def test_frontend_scopes_chat_history_to_active_persona(self) -> None:
+        source = (web_root() / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn("transcriptsByPersona", source)
+        self.assertIn("lastRecallByPersona", source)
+        self.assertIn("function transcriptForPersona", source)
+        self.assertIn("function activeTranscript()", source)
+        self.assertIn("function switchPersona", source)
+        self.assertIn("renderTranscript()", source)
+        recent_history_source = source[source.index("function recentHistory"): source.index("async function sendMessage")]
+        self.assertIn("activeTranscript()", recent_history_source)
+        self.assertNotIn("state.transcript\n    .filter", source)
+
+    def test_frontend_records_async_reply_to_original_persona(self) -> None:
+        source = (web_root() / "app.js").read_text(encoding="utf-8")
+        send_source = source[source.index("async function sendMessage"): source.index("function setComposerEnabled")]
+
+        self.assertIn("const personaId = persona.id;", send_source)
+        self.assertIn("setRecallForPersona(personaId", send_source)
+        self.assertIn("transcriptForPersona(personaId).push", send_source)
+        self.assertNotIn("activeTranscript().push({\n      role: \"assistant\"", send_source)
 
     def test_chat_server_ignores_client_memory_hits_by_default(self) -> None:
         payload = {

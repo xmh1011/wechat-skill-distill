@@ -1,9 +1,9 @@
 const state = {
   personas: [],
   activeId: "",
-  transcript: [],
+  transcriptsByPersona: {},
   runtime: { default_provider: "openai", providers: [] },
-  lastRecall: null,
+  lastRecallByPersona: {},
   busy: false
 };
 
@@ -107,6 +107,43 @@ function activePersona() {
   return state.personas.find((persona) => persona.id === state.activeId) || null;
 }
 
+function activeTranscriptKey() {
+  return state.activeId || "__pending__";
+}
+
+function transcriptForPersona(personaId) {
+  const key = personaId || "__pending__";
+  if (!state.transcriptsByPersona[key]) {
+    state.transcriptsByPersona[key] = [];
+  }
+  return state.transcriptsByPersona[key];
+}
+
+function activeTranscript() {
+  return transcriptForPersona(activeTranscriptKey());
+}
+
+function recallForPersona(personaId) {
+  return state.lastRecallByPersona[personaId || "__pending__"] || null;
+}
+
+function activeRecall() {
+  return recallForPersona(activeTranscriptKey());
+}
+
+function setRecallForPersona(personaId, value) {
+  const key = personaId || "__pending__";
+  if (value) {
+    state.lastRecallByPersona[key] = value;
+  } else {
+    delete state.lastRecallByPersona[key];
+  }
+}
+
+function setActiveRecall(value) {
+  setRecallForPersona(activeTranscriptKey(), value);
+}
+
 function renderInspector() {
   const persona = activePersona();
   const memory = state.runtime.memory || {};
@@ -116,7 +153,7 @@ function renderInspector() {
   els.memoryCountValue.textContent = memory.configured ? memory.backend : "未接入";
   const title = persona ? persona.name : "智能陪伴";
   els.appTitle.textContent = title;
-  els.brandMark.textContent = persona ? title.trim().slice(0, 1).toUpperCase() : "S";
+  els.brandMark.textContent = persona ? title.trim().slice(0, 1).toUpperCase() : "伴";
   document.title = title;
   els.conversationTitle.textContent = persona ? persona.name : "加载 skill 后开始对话";
   els.conversationSub.textContent = persona
@@ -168,7 +205,7 @@ function renderCompanionStatus() {
   addStatus("陪伴对象", persona ? persona.name : "未加载");
   addStatus("风格来源", persona ? "服务端启动加载" : "等待服务端配置");
   addStatus("记忆来源", cloudMemory.configured ? cloudMemory.backend : "未接入");
-  addStatus("本轮记忆", state.lastRecall ? "已参考相关上下文" : "等待对话");
+  addStatus("本轮记忆", activeRecall() ? "已参考相关上下文" : "等待对话");
 }
 
 function addStatus(label, value) {
@@ -191,7 +228,7 @@ function appendMessage(role, text, options = {}) {
   els.chatLog.appendChild(node);
   els.chatLog.scrollTop = els.chatLog.scrollHeight;
   if (record) {
-    state.transcript.push({ role, text, timestamp: new Date().toISOString() });
+    activeTranscript().push({ role, text, timestamp: new Date().toISOString() });
   }
   return node;
 }
@@ -203,7 +240,12 @@ function updateMessage(node, text, options = {}) {
 }
 
 function exportTranscript() {
-  const blob = new Blob([JSON.stringify(state.transcript, null, 2)], { type: "application/json" });
+  const persona = activePersona();
+  const payload = {
+    persona: persona ? { id: persona.id, name: persona.name, userId: persona.userId } : null,
+    transcript: activeTranscript()
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -212,8 +254,28 @@ function exportTranscript() {
   URL.revokeObjectURL(url);
 }
 
+function renderTranscript() {
+  els.chatLog.innerHTML = "";
+  for (const item of activeTranscript()) {
+    appendMessage(item.role, item.text, { record: false });
+  }
+  els.chatLog.scrollTop = els.chatLog.scrollHeight;
+}
+
+function switchPersona(personaId, options = {}) {
+  const { announce = false } = options;
+  state.activeId = personaId;
+  els.personaSelect.value = state.activeId;
+  renderInspector();
+  renderTranscript();
+  const persona = activePersona();
+  if (announce && persona && activeTranscript().length === 0) {
+    appendMessage("system", `已连接 ${persona.name}。`, { record: false });
+  }
+}
+
 function recentHistory() {
-  return state.transcript
+  return activeTranscript()
     .filter((item) => item.role === "user" || item.role === "assistant")
     .slice(-12)
     .map((item) => ({ role: item.role, text: item.text }));
@@ -225,7 +287,9 @@ async function sendMessage(input) {
     appendMessage("system", "服务未加载陪伴对象，请用 --skill 启动。");
     return;
   }
+  const personaId = persona.id;
   const history = recentHistory();
+  setRecallForPersona(personaId, null);
   renderInspector();
   appendMessage("user", input);
   els.typingStatus.hidden = false;
@@ -240,7 +304,7 @@ async function sendMessage(input) {
         provider: els.providerSelect.value,
         model: els.modelInput.value.trim(),
         message: input,
-        skill_id: persona.id,
+        skill_id: personaId,
         persona: { name: persona.name, userId: persona.userId },
         history
       })
@@ -250,10 +314,10 @@ async function sendMessage(input) {
       throw new Error(payload.error || `HTTP ${response.status}`);
     }
     const text = (payload.text || "").trim() || "我这边没生成出有效回复。";
-    state.lastRecall = payload.memory && payload.memory.server_hits ? { serverHits: payload.memory.server_hits } : null;
+    setRecallForPersona(personaId, payload.memory && payload.memory.server_hits ? { serverHits: payload.memory.server_hits } : null);
     renderInspector();
     updateMessage(pending, text);
-    state.transcript.push({
+    transcriptForPersona(personaId).push({
       role: "assistant",
       text,
       timestamp: new Date().toISOString(),
@@ -299,21 +363,22 @@ async function loadServerSkills() {
     state.activeId = state.personas[0] ? state.personas[0].id : "";
     renderPersonas();
     if (state.personas.length) {
-      appendMessage("system", `已连接 ${state.personas[0].name}。`);
+      switchPersona(state.personas[0].id, { announce: true });
     } else {
-      appendMessage("system", "服务启动时未指定陪伴对象。请使用 --skill <file> 重新启动。");
+      renderTranscript();
+      appendMessage("system", "服务启动时未指定陪伴对象。请使用 --skill <file> 重新启动。", { record: false });
     }
   } catch (error) {
     renderPersonas();
-    appendMessage("system", `无法读取服务端 skill：${error.message}`);
+    renderTranscript();
+    appendMessage("system", `无法读取服务端 skill：${error.message}`, { record: false });
   }
 }
 
 els.providerSelect.addEventListener("change", syncModelInput);
 els.modelInput.addEventListener("input", renderRuntimeStatus);
 els.personaSelect.addEventListener("change", (event) => {
-  state.activeId = event.target.value;
-  renderInspector();
+  switchPersona(event.target.value, { announce: true });
 });
 els.messageInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
@@ -330,13 +395,14 @@ els.composer.addEventListener("submit", (event) => {
   sendMessage(input);
 });
 els.clearChat.addEventListener("click", () => {
-  state.transcript = [];
-  els.chatLog.innerHTML = "";
+  state.transcriptsByPersona[activeTranscriptKey()] = [];
+  setActiveRecall(null);
   renderInspector();
-  appendMessage("system", "对话已清空。");
+  renderTranscript();
+  appendMessage("system", "对话已清空。", { record: false });
 });
 els.exportChat.addEventListener("click", exportTranscript);
 
 renderPersonas();
 loadRuntime().then(loadServerSkills);
-appendMessage("system", "正在连接陪伴对象。");
+appendMessage("system", "正在连接陪伴对象。", { record: false });

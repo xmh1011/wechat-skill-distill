@@ -281,7 +281,7 @@ wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765 --env-file .env
 - Hindsight recall 默认先用 `user:<id>` + `all_strict` 严格检索，无结果再 fallback 到 conversation tags；其他后端使用统一 query/user/persona/history 契约。
 - 支持导出模拟聊天 transcript。
 - 支持 `openai`、`anthropic`、`gemini` provider。
-- 浏览器只调用本地 `/api/chat`，API key 只在 server-side proxy 使用；浏览器不得接收模型 base URL。
+- 浏览器只调用本地 `/api/chat`，API key 只在 server-side proxy 使用；浏览器不得接收模型 base URL；默认不得接受浏览器传入的 model 覆盖，除非服务端显式开启 override。
 - 模型请求必须注入 skill 原文、最近聊天历史和服务端 recall 结果，要求回复符合 skill 风格。
 - 事实边界由 `.chat-memory.skill` 和 server-side harness prompt 约束；memory backend adapter 不写业务话题关键词。
 - 输入框支持 `Enter` 发送、`Shift+Enter` 换行。

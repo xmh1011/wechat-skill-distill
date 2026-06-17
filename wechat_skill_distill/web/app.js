@@ -302,7 +302,6 @@ async function sendMessage(input) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         provider: els.providerSelect.value,
-        model: els.modelInput.value.trim(),
         message: input,
         skill_id: personaId,
         persona: { name: persona.name, userId: persona.userId },

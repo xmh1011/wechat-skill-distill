@@ -266,6 +266,10 @@ def _max_tokens(env: Mapping[str, str], default: int = 800) -> int:
         raise ModelConfigError("MODEL_MAX_TOKENS must be an integer") from exc
 
 
+def _allow_client_model_override(env: Mapping[str, str]) -> bool:
+    return _env(env, "WSD_ALLOW_CLIENT_MODEL_OVERRIDE", "ALLOW_CLIENT_MODEL_OVERRIDE", default="").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _call_text_model(
     config: ProviderConfig,
     system_prompt: str,
@@ -348,7 +352,7 @@ def generate_chat_reply(payload: Mapping[str, Any], env: Mapping[str, str] | Non
     requested_provider = str(payload.get("provider") or _env(current_env, "WSD_MODEL_PROVIDER", "MODEL_PROVIDER", default="openai"))
     config = provider_config(requested_provider, current_env)
     model_override = str(payload.get("model") or "").strip()
-    if model_override:
+    if model_override and _allow_client_model_override(current_env):
         config = ProviderConfig(config.provider, model_override, config.base_url, config.api_key)
     if not config.api_key:
         raise ModelConfigError(f"{config.provider} API key is not configured")

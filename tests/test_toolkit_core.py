@@ -635,6 +635,7 @@ class ToolkitCoreTest(unittest.TestCase):
     def test_docs_keep_raw_skill_server_side(self) -> None:
         readme = Path("README.md").read_text(encoding="utf-8")
         prd = Path("PRD.md").read_text(encoding="utf-8")
+        env_example = Path(".env.example").read_text(encoding="utf-8")
 
         self.assertIn("浏览器只接收 persona 摘要和 skill_id，不接收完整 skill 文本", readme)
         self.assertIn("也不接收本地 skill 文件名", readme)
@@ -644,6 +645,9 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("浏览器不得接收本地 skill 文件名", prd)
         self.assertIn("模型 base URL 和 API key 只保留在本地服务端", readme)
         self.assertIn("浏览器不得接收模型 base URL", prd)
+        self.assertIn("浏览器不提交模型覆盖字段", readme)
+        self.assertIn("默认不得接受浏览器传入的 model 覆盖", prd)
+        self.assertIn("WSD_ALLOW_CLIENT_MODEL_OVERRIDE=0", env_example)
 
     def test_docs_require_shared_skill_metadata_parser(self) -> None:
         readme = Path("README.md").read_text(encoding="utf-8")
@@ -802,6 +806,7 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("normalizePersona", source)
         self.assertIn("persona.sampleCount", source)
         self.assertIn("skill_id: personaId", source)
+        self.assertNotIn("model: els.modelInput.value", source)
         self.assertIn("已配置 ${persona.sampleCount} 条风格样本", source)
         self.assertNotIn("persona.raw", source)
         self.assertNotIn("parseSkill", source)
@@ -918,6 +923,33 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertEqual(kwargs["headers"]["Authorization"], "Bearer secret")
         self.assertEqual(kwargs["json"]["model"], "deepseek-v4-flash")
         self.assertEqual(kwargs["json"]["messages"][-1]["content"], "周末要不要出去？")
+
+    def test_chat_model_override_is_server_side_opt_in(self) -> None:
+        payload = {
+            "provider": "openai",
+            "model": "client-picked-model",
+            "message": "周末要不要出去？",
+            "skill": "## 说话风格画像\n- 常见表达：可以。",
+            "persona": {"name": "Participant A", "userId": "user-a"},
+        }
+        env = {
+            "WSD_OPENAI_API_KEY": "secret",
+            "WSD_OPENAI_MODEL": "server-model",
+            "WSD_OPENAI_BASE_URL": "https://oneapi.example.test/v1",
+        }
+        with patch("wechat_skill_distill.model_client.requests.post") as post:
+            post.return_value = MockResponse({"choices": [{"message": {"content": "可以"}}]})
+            reply = generate_chat_reply(payload, env=env)
+
+        self.assertEqual(reply["model"], "server-model")
+        self.assertEqual(post.call_args.kwargs["json"]["model"], "server-model")
+
+        with patch("wechat_skill_distill.model_client.requests.post") as post:
+            post.return_value = MockResponse({"choices": [{"message": {"content": "可以"}}]})
+            reply = generate_chat_reply(payload, env={**env, "WSD_ALLOW_CLIENT_MODEL_OVERRIDE": "1"})
+
+        self.assertEqual(reply["model"], "client-picked-model")
+        self.assertEqual(post.call_args.kwargs["json"]["model"], "client-picked-model")
 
     def test_openai_recall_query_planner_outputs_json_queries(self) -> None:
         with patch("wechat_skill_distill.model_client.requests.post") as post:

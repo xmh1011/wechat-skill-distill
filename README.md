@@ -186,13 +186,26 @@ generated-chat-skills/Participant A.chat-memory.skill
 generated-chat-skills/Participant B.chat-memory.skill
 ```
 
-## Simulate Chat
+## Simulate Chat With A Model
 
 ```bash
-wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765
+wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765 --env-file .env
 ```
 
-Open the printed URL, load one or more `.skill` / `.chat-memory.skill` files, optionally load a `memory.jsonl`, then chat with the selected persona. The current simulator uses a local mock engine and does not call a model provider.
+Open the printed URL, load one or more `.skill` / `.chat-memory.skill` files, optionally load a `memory.jsonl`, then chat with the selected persona. The page calls the local `chat-ui` server, and the server calls the configured model provider. API keys stay in `.env` or environment variables and are never sent to the browser.
+
+Supported model protocols:
+
+| Provider | Env vars | Notes |
+| --- | --- | --- |
+| `openai` | `WSD_OPENAI_BASE_URL`, `WSD_OPENAI_MODEL`, `WSD_OPENAI_API_KEY` | OpenAI-compatible chat completions. Works with OpenAI, OneAPI, DeepSeek-compatible gateways, and similar services. |
+| `anthropic` | `WSD_ANTHROPIC_BASE_URL`, `WSD_ANTHROPIC_MODEL`, `WSD_ANTHROPIC_API_KEY` | Anthropic Messages API. |
+| `gemini` | `WSD_GEMINI_BASE_URL`, `WSD_GEMINI_MODEL`, `WSD_GEMINI_API_KEY` | Gemini `generateContent` API. |
+
+Keyboard behavior:
+
+- `Enter` sends the message.
+- `Shift+Enter` inserts a new line.
 
 ## Evaluate Skills
 

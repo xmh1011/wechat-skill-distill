@@ -2,14 +2,25 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from wechat_skill_distill.evaluation import collect_skill_paths, evaluate_skills
 from wechat_skill_distill.inspection import inspect_weflow_export
 from wechat_skill_distill.memory import build_memory_items, write_jsonl
+from wechat_skill_distill.model_client import build_companion_prompt, generate_chat_reply, runtime_status
 from wechat_skill_distill.redaction import redact_weflow_export
 from wechat_skill_distill.skills import generate_skill_texts, write_skill_files
 from wechat_skill_distill.weflow import load_weflow_messages
 from wechat_skill_distill.web_server import web_root
+
+
+class MockResponse:
+    def __init__(self, payload: dict, status_code: int = 200) -> None:
+        self._payload = payload
+        self.status_code = status_code
+
+    def json(self) -> dict:
+        return self._payload
 
 
 class ToolkitCoreTest(unittest.TestCase):
@@ -209,6 +220,98 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertNotIn("13800138000", contents)
         self.assertEqual(report["summary"]["messages_changed"], 2)
         self.assertEqual(report["summary"]["total_replacements"], 5)
+
+    def test_runtime_status_masks_model_keys(self) -> None:
+        report = runtime_status(
+            {
+                "WSD_OPENAI_API_KEY": "secret",
+                "WSD_OPENAI_MODEL": "deepseek-v4-flash",
+                "WSD_MODEL_PROVIDER": "openai",
+            }
+        )
+
+        self.assertEqual(report["default_provider"], "openai")
+        self.assertTrue(report["providers"][0]["configured"])
+        self.assertNotIn("secret", json.dumps(report))
+
+    def test_companion_prompt_includes_skill_and_memory_constraints(self) -> None:
+        prompt = build_companion_prompt(
+            {
+                "persona": {"name": "Participant A", "userId": "user-a"},
+                "skill": "## 说话风格画像\n- 常见表达：可以。",
+                "memory_hits": [{"content": "2026-04-18 user-a: 记得周末约过咖啡", "metadata": {"timestamp": "2026-04-18"}}],
+            }
+        )
+
+        self.assertIn("Participant A", prompt)
+        self.assertIn("常见表达", prompt)
+        self.assertIn("记得周末约过咖啡", prompt)
+        self.assertIn("不要编造", prompt)
+
+    def test_openai_compatible_chat_call_uses_server_side_protocol(self) -> None:
+        with patch("wechat_skill_distill.model_client.requests.post") as post:
+            post.return_value = MockResponse({"choices": [{"message": {"content": "可以，先看下周末时间"}}], "usage": {"total_tokens": 12}})
+
+            reply = generate_chat_reply(
+                {
+                    "provider": "openai",
+                    "message": "周末要不要出去？",
+                    "skill": "## 说话风格画像\n- 常见表达：可以。",
+                    "persona": {"name": "Participant A", "userId": "user-a"},
+                    "history": [{"role": "user", "text": "最近忙吗"}],
+                    "memory_hits": [],
+                },
+                env={
+                    "WSD_OPENAI_API_KEY": "secret",
+                    "WSD_OPENAI_MODEL": "deepseek-v4-flash",
+                    "WSD_OPENAI_BASE_URL": "https://oneapi.example.test/v1",
+                },
+            )
+
+        self.assertEqual(reply["text"], "可以，先看下周末时间")
+        self.assertEqual(reply["provider"], "openai")
+        args, kwargs = post.call_args
+        self.assertEqual(args[0], "https://oneapi.example.test/v1/chat/completions")
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer secret")
+        self.assertEqual(kwargs["json"]["model"], "deepseek-v4-flash")
+        self.assertEqual(kwargs["json"]["messages"][-1]["content"], "周末要不要出去？")
+
+    def test_anthropic_chat_call_uses_messages_protocol(self) -> None:
+        with patch("wechat_skill_distill.model_client.requests.post") as post:
+            post.return_value = MockResponse({"content": [{"type": "text", "text": "嗯，可以先别定太死"}], "usage": {"input_tokens": 10}})
+
+            reply = generate_chat_reply(
+                {"provider": "anthropic", "message": "怎么安排？", "skill": "## 说话风格画像\n- 短句。"},
+                env={
+                    "WSD_ANTHROPIC_API_KEY": "secret",
+                    "WSD_ANTHROPIC_MODEL": "claude-sonnet-test",
+                },
+            )
+
+        self.assertEqual(reply["text"], "嗯，可以先别定太死")
+        args, kwargs = post.call_args
+        self.assertEqual(args[0], "https://api.anthropic.com/v1/messages")
+        self.assertEqual(kwargs["headers"]["x-api-key"], "secret")
+        self.assertEqual(kwargs["headers"]["anthropic-version"], "2023-06-01")
+        self.assertEqual(kwargs["json"]["model"], "claude-sonnet-test")
+
+    def test_gemini_chat_call_uses_generate_content_protocol(self) -> None:
+        with patch("wechat_skill_distill.model_client.requests.post") as post:
+            post.return_value = MockResponse({"candidates": [{"content": {"parts": [{"text": "可以，先看看你几点方便"}]}}]})
+
+            reply = generate_chat_reply(
+                {"provider": "gemini", "message": "今晚聊会儿？", "skill": "## 说话风格画像\n- 常见表达：可以。"},
+                env={
+                    "WSD_GEMINI_API_KEY": "secret",
+                    "WSD_GEMINI_MODEL": "gemini-test",
+                },
+            )
+
+        self.assertEqual(reply["text"], "可以，先看看你几点方便")
+        args, kwargs = post.call_args
+        self.assertEqual(args[0], "https://generativelanguage.googleapis.com/v1beta/models/gemini-test:generateContent")
+        self.assertEqual(kwargs["headers"]["x-goog-api-key"], "secret")
+        self.assertEqual(kwargs["json"]["contents"][-1]["parts"][0]["text"], "今晚聊会儿？")
 
 
 if __name__ == "__main__":

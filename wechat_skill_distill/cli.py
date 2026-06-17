@@ -173,7 +173,7 @@ def cmd_import(args: argparse.Namespace) -> int:
 
 
 def cmd_chat_ui(args: argparse.Namespace) -> int:
-    serve_chat_ui(args.host, args.port)
+    serve_chat_ui(args.host, args.port, env_file=args.env_file)
     return 0
 
 
@@ -284,6 +284,7 @@ def build_parser() -> argparse.ArgumentParser:
     chat_ui = sub.add_parser("chat-ui", help="serve the local chat simulator UI")
     chat_ui.add_argument("--host", default="127.0.0.1")
     chat_ui.add_argument("--port", default=8765, type=int)
+    chat_ui.add_argument("--env-file", type=Path, default=Path(".env"), help="load model provider secrets from a local env file")
     chat_ui.set_defaults(func=cmd_chat_ui)
 
     evaluate = sub.add_parser("evaluate-skills", help="evaluate generated skill files")

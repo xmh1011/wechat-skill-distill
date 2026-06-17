@@ -2,12 +2,17 @@ const state = {
   personas: [],
   activeId: "",
   memoryRows: [],
-  transcript: []
+  transcript: [],
+  runtime: { default_provider: "openai", providers: [] },
+  busy: false
 };
 
 const els = {
   skillFiles: document.getElementById("skillFiles"),
   memoryFile: document.getElementById("memoryFile"),
+  providerSelect: document.getElementById("providerSelect"),
+  modelInput: document.getElementById("modelInput"),
+  modelHint: document.getElementById("modelHint"),
   personaSelect: document.getElementById("personaSelect"),
   modeValue: document.getElementById("modeValue"),
   userIdValue: document.getElementById("userIdValue"),
@@ -22,6 +27,9 @@ const els = {
   clearChat: document.getElementById("clearChat"),
   exportChat: document.getElementById("exportChat"),
   runtimeStatus: document.getElementById("runtimeStatus"),
+  conversationTitle: document.getElementById("conversationTitle"),
+  conversationSub: document.getElementById("conversationSub"),
+  statePills: document.getElementById("statePills"),
   messageTemplate: document.getElementById("messageTemplate")
 };
 
@@ -65,9 +73,9 @@ const demoMemory = [
 function parseSkill(text, fileName = "skill") {
   const titleMatch = text.match(/^#\s+(.+?)\s+(Chat\s+)?Skill\s*$/m);
   const userMatch = text.match(/userID=([^\s，。`]+)/);
-  const commonMatch = text.match(/常见表达：(.+?)。/);
+  const commonLine = text.match(/常见表达：([^\n]+)/);
   const samples = [...text.matchAll(/```text\n([\s\S]*?)\n```/g)].map((match) => match[1].trim()).filter(Boolean);
-  const phrases = commonMatch ? commonMatch[1].split(/[、,，]/).map((item) => item.trim()).filter(Boolean) : [];
+  const phrases = commonLine ? commonLine[1].replace(/[。.;；]\s*$/, "").split(/[、,，]/).map((item) => item.trim()).filter(Boolean) : [];
   const name = titleMatch ? titleMatch[1].trim() : fileName.replace(/\.(chat-memory\.)?skill$/i, "");
   const id = `${userMatch ? userMatch[1] : name}-${Math.random().toString(16).slice(2)}`;
   return {
@@ -79,6 +87,47 @@ function parseSkill(text, fileName = "skill") {
     samples,
     raw: text
   };
+}
+
+function providerByName(name) {
+  return state.runtime.providers.find((provider) => provider.provider === name) || null;
+}
+
+function renderProviders() {
+  els.providerSelect.innerHTML = "";
+  const providers = state.runtime.providers.length ? state.runtime.providers : [
+    { provider: "openai", model: "", configured: false },
+    { provider: "anthropic", model: "", configured: false },
+    { provider: "gemini", model: "", configured: false }
+  ];
+  for (const provider of providers) {
+    const option = document.createElement("option");
+    option.value = provider.provider;
+    option.textContent = `${provider.provider}${provider.configured ? "" : "（未配置）"}`;
+    els.providerSelect.appendChild(option);
+  }
+  els.providerSelect.value = state.runtime.default_provider || providers[0].provider;
+  syncModelInput();
+  renderRuntimeStatus();
+}
+
+function syncModelInput() {
+  const provider = providerByName(els.providerSelect.value);
+  els.modelInput.value = provider && provider.model ? provider.model : "";
+  renderRuntimeStatus();
+}
+
+function renderRuntimeStatus() {
+  const provider = providerByName(els.providerSelect.value);
+  const model = els.modelInput.value.trim() || (provider && provider.model) || "";
+  const ready = Boolean(provider && provider.configured && model);
+  els.runtimeStatus.textContent = ready
+    ? `${provider.provider} · ${model} · server-side key`
+    : "模型服务未完整配置";
+  els.modelHint.textContent = ready
+    ? "请求会从本地服务端转发，浏览器不保存 API key。"
+    : "请在 .env 中配置对应 provider 的 API key 和 model。";
+  renderStatePills();
 }
 
 function renderPersonas() {
@@ -106,6 +155,10 @@ function renderInspector(hits = []) {
   els.userIdValue.textContent = persona ? persona.userId : "-";
   els.sampleCountValue.textContent = persona ? String(persona.samples.length) : "0";
   els.memoryCountValue.textContent = `${state.memoryRows.length} rows`;
+  els.conversationTitle.textContent = persona ? `正在模拟 ${persona.name}` : "加载 skill 后开始对话";
+  els.conversationSub.textContent = persona
+    ? "模型会结合 skill、上下文和命中的记忆生成回复"
+    : "先加载一个 .skill 或 .chat-memory.skill 文件";
   els.styleTokens.innerHTML = "";
   if (!persona) {
     addToken("No persona", "amber");
@@ -117,6 +170,23 @@ function renderInspector(hits = []) {
     }
   }
   renderHits(hits);
+  renderStatePills();
+}
+
+function renderStatePills() {
+  const persona = activePersona();
+  const provider = providerByName(els.providerSelect.value);
+  els.statePills.innerHTML = "";
+  addPill(persona ? "Skill ready" : "No skill", persona ? "ok" : "warn");
+  addPill(`${state.memoryRows.length} memories`, state.memoryRows.length ? "ok" : "");
+  addPill(provider && provider.configured ? provider.provider : "No model", provider && provider.configured ? "ok" : "warn");
+}
+
+function addPill(text, tone = "") {
+  const pill = document.createElement("span");
+  pill.className = `pill ${tone}`.trim();
+  pill.textContent = text;
+  els.statePills.appendChild(pill);
 }
 
 function addToken(text, tone = "") {
@@ -131,11 +201,11 @@ function renderHits(hits) {
   if (!hits.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.textContent = "No hits";
+    empty.textContent = "暂无命中";
     els.memoryHits.appendChild(empty);
     return;
   }
-  for (const hit of hits.slice(0, 5)) {
+  for (const hit of hits.slice(0, 6)) {
     const item = document.createElement("div");
     item.className = "hit";
     item.textContent = hit.content || JSON.stringify(hit);
@@ -143,13 +213,24 @@ function renderHits(hits) {
   }
 }
 
-function appendMessage(role, text) {
+function appendMessage(role, text, options = {}) {
+  const { record = true, pending = false } = options;
   const node = els.messageTemplate.content.firstElementChild.cloneNode(true);
   node.classList.add(role);
+  if (pending) node.classList.add("pending");
   node.querySelector(".bubble").textContent = text;
   els.chatLog.appendChild(node);
   els.chatLog.scrollTop = els.chatLog.scrollHeight;
-  state.transcript.push({ role, text, timestamp: new Date().toISOString() });
+  if (record) {
+    state.transcript.push({ role, text, timestamp: new Date().toISOString() });
+  }
+  return node;
+}
+
+function updateMessage(node, text, options = {}) {
+  node.querySelector(".bubble").textContent = text;
+  node.classList.toggle("pending", Boolean(options.pending));
+  els.chatLog.scrollTop = els.chatLog.scrollHeight;
 }
 
 function keywordSet(input) {
@@ -166,31 +247,6 @@ function searchMemory(input, persona) {
   });
 }
 
-function generateReply(input) {
-  const persona = activePersona();
-  if (!persona) {
-    return { text: "先加载一个 skill 文件。", hits: [] };
-  }
-  const hits = searchMemory(input, persona);
-  const sample = persona.samples[Math.floor(Math.random() * Math.max(persona.samples.length, 1))] || "";
-  const phrase = persona.phrases[Math.floor(Math.random() * Math.max(persona.phrases.length, 1))] || "可以";
-  let text;
-  if (hits.length) {
-    text = `${phrase}，我看记录里有这个。\n${trimLine(hits[0].content || "")}`;
-  } else if (/周末|明天|今晚|约|几点|什么时候/.test(input)) {
-    text = sample.includes("明天") ? sample : `${phrase}，先看时间，别把安排说死。`;
-  } else if (/怎么|为啥|为什么|咋/.test(input)) {
-    text = `${phrase}，我倾向于先把上下文确认一下。`;
-  } else {
-    text = sample || `${phrase}，这个我先按当前上下文回。`;
-  }
-  return { text, hits };
-}
-
-function trimLine(text) {
-  return text.length > 90 ? `${text.slice(0, 90)}...` : text;
-}
-
 async function readTextFile(file) {
   return file.text();
 }
@@ -204,14 +260,29 @@ async function loadSkillFiles(files) {
   state.personas = loaded;
   state.activeId = loaded[0] ? loaded[0].id : "";
   renderPersonas();
-  appendMessage("system", `Loaded ${loaded.length} skill file${loaded.length === 1 ? "" : "s"}.`);
+  appendMessage("system", `已加载 ${loaded.length} 个 skill 文件。`);
 }
 
 async function loadMemoryFile(file) {
   const text = await readTextFile(file);
-  state.memoryRows = text.split(/\n+/).map((line) => line.trim()).filter(Boolean).map((line) => JSON.parse(line));
+  const rows = [];
+  const errors = [];
+  text.split(/\n+/).forEach((line, index) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    try {
+      rows.push(JSON.parse(trimmed));
+    } catch (error) {
+      errors.push(index + 1);
+    }
+  });
+  state.memoryRows = rows;
   renderInspector();
-  appendMessage("system", `Loaded ${state.memoryRows.length} memory rows.`);
+  if (errors.length) {
+    appendMessage("system", `已加载 ${rows.length} 条记忆，跳过 ${errors.length} 行无法解析的 JSONL。`);
+  } else {
+    appendMessage("system", `已加载 ${rows.length} 条记忆。`);
+  }
 }
 
 function loadDemo() {
@@ -221,7 +292,7 @@ function loadDemo() {
   state.transcript = [];
   els.chatLog.innerHTML = "";
   renderPersonas();
-  appendMessage("assistant", "可以，先把范围卡住，不然越写越散");
+  appendMessage("system", "Demo 已加载。请配置模型后输入消息。");
 }
 
 function exportTranscript() {
@@ -234,32 +305,116 @@ function exportTranscript() {
   URL.revokeObjectURL(url);
 }
 
+function recentHistory() {
+  return state.transcript
+    .filter((item) => item.role === "user" || item.role === "assistant")
+    .slice(-12)
+    .map((item) => ({ role: item.role, text: item.text }));
+}
+
+async function sendMessage(input) {
+  const persona = activePersona();
+  if (!persona) {
+    appendMessage("system", "请先加载并选择一个 skill。");
+    return;
+  }
+  const hits = searchMemory(input, persona);
+  const history = recentHistory();
+  renderInspector(hits);
+  appendMessage("user", input);
+  const pending = appendMessage("assistant", "正在结合 skill、记忆和上下文生成回复...", { record: false, pending: true });
+  state.busy = true;
+  setComposerEnabled(false);
+  try {
+    const response = await fetch("./api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: els.providerSelect.value,
+        model: els.modelInput.value.trim(),
+        message: input,
+        skill: persona.raw,
+        persona: { name: persona.name, userId: persona.userId },
+        memory_hits: hits.slice(0, 8),
+        history
+      })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || `HTTP ${response.status}`);
+    }
+    const text = (payload.text || "").trim() || "我这边没生成出有效回复。";
+    updateMessage(pending, text);
+    state.transcript.push({
+      role: "assistant",
+      text,
+      timestamp: new Date().toISOString(),
+      provider: payload.provider,
+      model: payload.model
+    });
+  } catch (error) {
+    updateMessage(pending, `模型调用失败：${error.message}`);
+    pending.classList.remove("assistant");
+    pending.classList.add("system");
+  } finally {
+    state.busy = false;
+    setComposerEnabled(true);
+    els.messageInput.focus();
+  }
+}
+
+function setComposerEnabled(enabled) {
+  els.messageInput.disabled = !enabled;
+  els.composer.querySelector("button[type='submit']").disabled = !enabled;
+}
+
+async function loadRuntime() {
+  try {
+    const response = await fetch("./api/runtime", { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    state.runtime = await response.json();
+  } catch (error) {
+    state.runtime = { default_provider: "openai", providers: [] };
+    els.runtimeStatus.textContent = `无法读取模型服务：${error.message}`;
+  }
+  renderProviders();
+}
+
 els.skillFiles.addEventListener("change", (event) => loadSkillFiles(event.target.files));
 els.memoryFile.addEventListener("change", (event) => {
   const file = event.target.files[0];
   if (file) loadMemoryFile(file);
 });
+els.providerSelect.addEventListener("change", syncModelInput);
+els.modelInput.addEventListener("input", renderRuntimeStatus);
 els.personaSelect.addEventListener("change", (event) => {
   state.activeId = event.target.value;
   renderInspector();
 });
+els.messageInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+    event.preventDefault();
+    els.composer.requestSubmit();
+  }
+});
 els.composer.addEventListener("submit", (event) => {
   event.preventDefault();
+  if (state.busy) return;
   const input = els.messageInput.value.trim();
   if (!input) return;
-  appendMessage("user", input);
   els.messageInput.value = "";
-  const { text, hits } = generateReply(input);
-  renderInspector(hits);
-  window.setTimeout(() => appendMessage("assistant", text), 180);
+  sendMessage(input);
 });
 els.clearChat.addEventListener("click", () => {
   state.transcript = [];
   els.chatLog.innerHTML = "";
   renderInspector();
+  appendMessage("system", "对话已清空。");
 });
 els.exportChat.addEventListener("click", exportTranscript);
 els.loadDemo.addEventListener("click", loadDemo);
 
 renderPersonas();
-appendMessage("system", "Ready.");
+renderHits([]);
+loadRuntime();
+appendMessage("system", "加载 skill 后即可开始模型对话。");

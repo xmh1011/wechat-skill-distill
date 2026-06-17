@@ -17,8 +17,9 @@ MEMORY_BACKEND_TEXT = {
 - Key：`HINDSIGHT_API_KEY`
 - Endpoint：`POST /v1/default/banks/{bank_id}/memories/recall`
 - types：`["world", "observation"]`
-- tags：优先带上 `source:weflow`、`chat:wechat`、`user:{userID}` 或具体 conversation tag。
-- query：围绕当前 userID 和用户当前输入构造自然语言查询，检索直接相关的已记录事实和上下文。
+- tags：优先使用 `user:{userID}` 严格限定当前人物；无结果时再按具体 conversation tag 放宽。
+- tags_match：默认 `all_strict`；conversation fallback 可用 `any_strict`。
+- query：必须包含当前用户原话、最近对话上下文和目标 userID，只检索能直接支撑当前回复的事实。
 
 如果检索不到直接相关事实，不要编造细节；自然表达不确定或追问。
 不要把 key 写入 skill；只引用环境变量。""",

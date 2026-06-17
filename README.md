@@ -203,7 +203,10 @@ HINDSIGHT_BANK_ID=your-chat-bank
 HINDSIGHT_API_KEY=...
 WSD_HINDSIGHT_TYPES=world,observation
 WSD_HINDSIGHT_MAX_TOKENS=1800
+WSD_HINDSIGHT_RECALL_MODE=auto
 ```
+
+Recall runs in `auto` mode by default: lightweight greetings do not query memory, factual turns build a query from the current message, recent chat context, and the active persona. The server first tries strict `user:<id>` scoped recall, then falls back to the skill's conversation tags when the strict pass returns no facts.
 
 Supported model protocols:
 

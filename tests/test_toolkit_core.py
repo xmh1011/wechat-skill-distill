@@ -267,7 +267,41 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("事实不是风格", prompt)
         self.assertIn("用户问题里的事实前提不自动成立", prompt)
 
-    def test_hindsight_recall_uses_skill_defaults_and_tag_fallback(self) -> None:
+    def test_hindsight_recall_uses_precise_query_and_strict_user_scope(self) -> None:
+        skill = """
+        # Participant A Chat Skill
+        - Bank：`memory-bank-test`
+        - `tags`：`["conversation:chat-a-b"]`
+        """
+        with patch("wechat_skill_distill.memory_recall.requests.post") as post:
+            post.return_value = MockResponse({"results": [{"id": "m1", "text": "Participant A提到周末可能有空", "type": "world", "metadata": {"userID": "user-a"}}]})
+
+            hits = recall_for_chat(
+                {
+                    "message": "讲讲你之前提过的那件事",
+                    "skill": skill,
+                    "persona": {"name": "Participant A", "userId": "user-a"},
+                    "history": [{"role": "user", "text": "上次说到周末安排"}, {"role": "assistant", "text": "可以先看时间"}],
+                },
+                env={
+                    "HINDSIGHT_API_URL": "https://memory.example.test/api",
+                    "HINDSIGHT_API_KEY": "secret",
+                    "HINDSIGHT_BANK_ID": "memory-bank-test",
+                },
+            )
+
+        self.assertEqual([hit["content"] for hit in hits], ["Participant A提到周末可能有空"])
+        self.assertTrue(memory_runtime_status({"HINDSIGHT_API_KEY": "secret"})["configured"])
+        first_body = post.call_args.kwargs["json"]
+        self.assertEqual(post.call_args_list[0].args[0], "https://memory.example.test/api/v1/default/banks/memory-bank-test/memories/recall")
+        self.assertEqual(first_body["tags"], ["user:user-a"])
+        self.assertEqual(first_body["tags_match"], "all_strict")
+        self.assertIn("当前用户原话：讲讲你之前提过的那件事", first_body["query"])
+        self.assertIn("最近对话上下文", first_body["query"])
+        self.assertIn("只寻找能够直接回答当前原话", first_body["query"])
+        self.assertIn("忽略仅同属该人物但与当前原话无直接关系", first_body["query"])
+
+    def test_hindsight_recall_falls_back_to_skill_conversation_tags(self) -> None:
         skill = """
         # Participant A Chat Skill
         - Bank：`memory-bank-test`
@@ -276,19 +310,12 @@ class ToolkitCoreTest(unittest.TestCase):
         with patch("wechat_skill_distill.memory_recall.requests.post") as post:
             post.side_effect = [
                 MockResponse({"results": []}),
-                MockResponse(
-                    {
-                        "results": [
-                            {"id": "m0", "text": "Participant B提到过一次旅行安排", "type": "world", "metadata": {"userID": "user-b"}},
-                            {"id": "m1", "text": "Participant A提到周末可能有空", "type": "world", "metadata": {"userID": "user-a"}},
-                        ]
-                    }
-                ),
+                MockResponse({"results": [{"id": "m1", "text": "Participant A和Participant B周末聊过安排", "type": "world"}]}),
             ]
 
             hits = recall_for_chat(
                 {
-                    "message": "讲讲你之前提过的那件事",
+                    "message": "讲讲你们之前提过的周末安排",
                     "skill": skill,
                     "persona": {"name": "Participant A", "userId": "user-a"},
                 },
@@ -299,15 +326,31 @@ class ToolkitCoreTest(unittest.TestCase):
                 },
             )
 
-        self.assertEqual([hit["content"] for hit in hits], ["Participant B提到过一次旅行安排", "Participant A提到周末可能有空"])
-        self.assertTrue(memory_runtime_status({"HINDSIGHT_API_KEY": "secret"})["configured"])
+        self.assertEqual([hit["content"] for hit in hits], ["Participant A和Participant B周末聊过安排"])
         first_body = post.call_args_list[0].kwargs["json"]
         second_body = post.call_args_list[1].kwargs["json"]
-        self.assertEqual(post.call_args_list[0].args[0], "https://memory.example.test/api/v1/default/banks/memory-bank-test/memories/recall")
-        self.assertIn("conversation:chat-a-b", first_body["tags"])
-        self.assertIn("user:user-a", first_body["tags"])
-        self.assertEqual(first_body["tags_match"], "any_strict")
-        self.assertNotIn("tags", second_body)
+        self.assertEqual(first_body["tags"], ["user:user-a"])
+        self.assertEqual(first_body["tags_match"], "all_strict")
+        self.assertEqual(second_body["tags"], ["conversation:chat-a-b"])
+        self.assertEqual(second_body["tags_match"], "any_strict")
+
+    def test_hindsight_recall_skips_small_talk_by_default(self) -> None:
+        with patch("wechat_skill_distill.memory_recall.requests.post") as post:
+            hits = recall_for_chat(
+                {
+                    "message": "你好",
+                    "skill": "# Participant A Chat Skill",
+                    "persona": {"name": "Participant A", "userId": "user-a"},
+                },
+                env={
+                    "HINDSIGHT_API_URL": "https://memory.example.test/api",
+                    "HINDSIGHT_API_KEY": "secret",
+                    "HINDSIGHT_BANK_ID": "memory-bank-test",
+                },
+            )
+
+        self.assertEqual(hits, [])
+        post.assert_not_called()
 
     def test_openai_compatible_chat_call_uses_server_side_protocol(self) -> None:
         with patch("wechat_skill_distill.model_client.requests.post") as post:

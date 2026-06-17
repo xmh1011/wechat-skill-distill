@@ -264,6 +264,8 @@ wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765 --env-file .env
 - 支持加载 JSONL 记忆文件，按输入关键词做本地检索，但不展示 raw memory hits。
 - 支持 Hindsight server-side recall：当 `.chat-memory.skill` 或环境变量提供 bank/tags 时，`/api/chat` 在模型调用前自动检索相关记忆。
 - `/api/chat` 不向浏览器返回 raw memory hits，只返回召回状态摘要。
+- recall query 必须包含当前用户原话、最近对话上下文和目标 persona；轻量寒暄默认不召回。
+- Hindsight recall 默认先用 `user:<id>` + `all_strict` 严格检索，无结果再 fallback 到 conversation tags。
 - 支持导出模拟聊天 transcript。
 - 支持 `openai`、`anthropic`、`gemini` provider。
 - 浏览器只调用本地 `/api/chat`，API key 只在 server-side proxy 使用。

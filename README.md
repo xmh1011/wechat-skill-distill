@@ -200,7 +200,7 @@ Open the printed URL and chat with the preloaded persona. Pass `--skill` multipl
 
 多 persona 模拟时，每个 persona 维护独立对话历史和本轮记忆状态；切换对象不会把上一位对象的 history 传给下一位。导出对话时只导出当前 persona 的 transcript 和基础身份摘要。
 
-浏览器只接收 persona 摘要和 skill_id，不接收完整 skill 文本，也不接收本地 skill 文件名，不接收 user_id，不接收常见表达短语；聊天请求只提交 skill_id，完整 skill 由本地服务端在调用模型前注入。模型 base URL 和 API key 只保留在本地服务端，`/api/runtime` 只返回 provider、model 和 configured 状态；浏览器不提交 provider 覆盖字段，浏览器不提交模型覆盖字段，默认 provider 和模型都由服务端环境变量决定。默认不向浏览器返回 provider 或 memory 的原始错误细节；本地排查时可显式设置 `WSD_DEBUG_ERRORS=1`。
+浏览器只接收 persona 摘要和 skill_id，不接收完整 skill 文本，也不接收本地 skill 文件名，不接收 user_id，不接收常见表达短语；聊天请求只提交 skill_id，完整 skill 由本地服务端在调用模型前注入。聊天 API 不接受浏览器传入 raw skill 或 persona 覆盖；服务端未通过 `--skill` 预加载对象时会拒绝聊天请求。模型 base URL 和 API key 只保留在本地服务端，`/api/runtime` 只返回 provider、model 和 configured 状态；浏览器只接收云记忆是否接入，不接收 memory backend 名称或 bank_id。浏览器不提交 provider 覆盖字段，浏览器不提交模型覆盖字段，默认 provider 和模型都由服务端环境变量决定。默认不向浏览器返回 provider 或 memory 的原始错误细节；本地排查时可显式设置 `WSD_DEBUG_ERRORS=1`。
 
 If a runtime memory backend is configured, `/api/chat` recalls relevant memories before calling the model and injects those hits with the selected skill. Raw memory hits are not returned to the browser, and the browser does not upload memory files or run its own retrieval. 服务端会按 metadata、participants 和 user:<id> tags 过滤明确属于其他 user 的命中；metadata.userID 和 participants 可以是数组或逗号分隔字符串。JSONL fallback 只使用通用 token 和中文 bigram 匹配，不基于记忆文本做业务关键词过滤。 The UI only shows whether related context was referenced. The recall adapter stays generic; factual boundaries are enforced by the generated `.chat-memory.skill` and the server-side companion prompt.
 

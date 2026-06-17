@@ -7,11 +7,12 @@ from types import ModuleType
 import unittest
 from unittest.mock import patch
 
+import wechat_skill_distill.web_server as web_server_module
 from wechat_skill_distill.evaluation import collect_skill_paths, evaluate_skills
 from wechat_skill_distill.inspection import inspect_weflow_export
 from wechat_skill_distill.memory import build_memory_items, write_jsonl
 from wechat_skill_distill.memory_recall import MemoryRecallError, memory_runtime_status, recall_for_chat
-from wechat_skill_distill.model_client import ModelCallError, build_companion_prompt, build_recall_query_planner_prompt, generate_chat_reply, generate_recall_query_variants, runtime_status
+from wechat_skill_distill.model_client import ModelCallError, ModelConfigError, build_companion_prompt, build_recall_query_planner_prompt, generate_chat_reply, generate_recall_query_variants, runtime_status
 from wechat_skill_distill.redaction import redact_weflow_export
 from wechat_skill_distill.skills import generate_skill_texts, write_skill_files
 from wechat_skill_distill.weflow import load_weflow_messages
@@ -371,6 +372,17 @@ class ToolkitCoreTest(unittest.TestCase):
 
         self.assertIn("真实 skill 内容", resolved["skill"])
         self.assertEqual(resolved["persona"], {"name": "Participant A", "userId": "user-a"})
+        self.assertNotIn("Forged", json.dumps(resolved, ensure_ascii=False))
+
+    def test_chat_payload_rejects_client_supplied_skill_without_server_asset(self) -> None:
+        payload = {
+            "message": "你好",
+            "skill": "# Client Supplied Skill",
+            "persona": {"name": "Client Persona", "userId": "client-user"},
+        }
+
+        with self.assertRaises(ModelConfigError):
+            resolve_preloaded_skill_payload(payload, [])
 
     def test_evaluate_skills_reports_pass_and_identity_leakage(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -446,6 +458,20 @@ class ToolkitCoreTest(unittest.TestCase):
 
         self.assertFalse(any(provider["configured"] for provider in report["providers"]))
         self.assertEqual([provider["model"] for provider in report["providers"]], ["", "", ""])
+
+    def test_public_runtime_status_hides_memory_backend_details(self) -> None:
+        report = web_server_module.public_runtime_payload(
+            {
+                "HINDSIGHT_API_KEY": "secret",
+                "HINDSIGHT_BANK_ID": "private-bank",
+                "MODEL_PROVIDER": "openai",
+            }
+        )
+
+        self.assertEqual(report["memory"], {"configured": True})
+        serialized = json.dumps(report, ensure_ascii=False)
+        self.assertNotIn("hindsight", serialized.lower())
+        self.assertNotIn("private-bank", serialized)
 
     def test_companion_prompt_includes_skill_and_memory_constraints(self) -> None:
         prompt = build_companion_prompt(
@@ -685,8 +711,11 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("不接收 user_id", readme)
         self.assertIn("不接收常见表达短语", readme)
         self.assertIn("聊天请求只提交 skill_id", readme)
+        self.assertIn("聊天 API 不接受浏览器传入 raw skill 或 persona 覆盖", readme)
         self.assertIn("完整 skill 文本只保存在本地服务端", prd)
         self.assertIn("浏览器不得接收或回传 raw skill 文本", prd)
+        self.assertIn("聊天 API 必须拒绝未预加载 skill 的请求", prd)
+        self.assertIn("不得接受浏览器传入 raw skill 或 persona 覆盖", prd)
         self.assertIn("浏览器不得接收本地 skill 文件名", prd)
         self.assertIn("浏览器不得接收 user_id", prd)
         self.assertIn("浏览器不得接收常见表达短语", prd)
@@ -698,6 +727,8 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("默认不得接受浏览器传入的 provider 覆盖", prd)
         self.assertIn("默认不向浏览器返回 provider 或 memory 的原始错误细节", readme)
         self.assertIn("默认不得向浏览器返回 provider/memory 原始错误细节", prd)
+        self.assertIn("浏览器只接收云记忆是否接入", readme)
+        self.assertIn("浏览器不得接收 memory backend 名称或 bank_id", prd)
         self.assertIn("WSD_ALLOW_CLIENT_PROVIDER_OVERRIDE=0", env_example)
         self.assertIn("WSD_ALLOW_CLIENT_MODEL_OVERRIDE=0", env_example)
         self.assertIn("WSD_DEBUG_ERRORS=0", env_example)
@@ -946,6 +977,9 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertNotIn("skill.file_name", source)
         self.assertNotIn("组场景示例", source)
         self.assertNotIn("后台模型未配置", source)
+        self.assertNotIn("memory.backend", source)
+        self.assertNotIn("记忆来源", source)
+        self.assertIn("云记忆", source)
 
     def test_frontend_does_not_run_browser_side_memory_retrieval(self) -> None:
         root = web_root()

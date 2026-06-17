@@ -53,9 +53,18 @@ def public_skill_assets(assets: list[dict[str, str]]) -> list[dict[str, Any]]:
     return [_skill_summary(asset) for asset in assets]
 
 
+def public_memory_runtime_status(env: Mapping[str, str] | None = None) -> dict[str, Any]:
+    status = memory_runtime_status(env)
+    return {"configured": bool(status.get("configured"))}
+
+
+def public_runtime_payload(env: Mapping[str, str] | None = None) -> dict[str, Any]:
+    return {**runtime_status(env), "memory": public_memory_runtime_status(env)}
+
+
 def resolve_preloaded_skill_payload(payload: dict[str, Any], assets: list[dict[str, str]]) -> dict[str, Any]:
     if not assets:
-        return payload
+        raise ModelConfigError("no skill is loaded on this server")
     skill_id = str(payload.get("skill_id") or payload.get("skillId") or "").strip()
     if not skill_id and len(assets) == 1:
         skill_id = assets[0]["id"]
@@ -165,7 +174,7 @@ class ChatUIHandler(SimpleHTTPRequestHandler):
     def do_GET(self) -> None:
         path = urlparse(self.path).path
         if path == "/api/runtime":
-            self._write_json(200, {**runtime_status(), "memory": memory_runtime_status()})
+            self._write_json(200, public_runtime_payload())
             return
         if path == "/api/skills":
             self._write_json(200, {"skills": public_skill_assets(self.preloaded_skills)})

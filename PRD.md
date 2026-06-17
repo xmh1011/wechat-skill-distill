@@ -272,6 +272,7 @@ wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765 --env-file .env
 - 浏览器不得接收 user_id，user_id 只在服务端解析、召回和评估链路使用。
 - 浏览器不得接收常见表达短语，风格样本和表达线索只保存在服务端 prompt 注入链路。
 - `/api/skills` 只返回 persona 摘要和 `skill_id`，`/api/chat` 根据 `skill_id` 在服务端解析并注入完整 skill。
+- 聊天 API 必须拒绝未预加载 skill 的请求，不得接受浏览器传入 raw skill 或 persona 覆盖。
 - 服务端 public persona 摘要和 evaluate-skills 必须复用同一套 skill metadata parser，避免 UI 展示名和评估报告不一致；public 摘要不得返回 user_id；metadata parser 只读取文件开头 frontmatter block。
 - 多 persona UI 必须按 skill_id 隔离 transcript 和 recall 状态，切换对象时不得把上一位对象的 history 传给下一位。
 - 前端不上传记忆文件、不做浏览器侧检索；JSONL 记忆通过服务端 `JSONL_MEMORY_PATH` 接入。
@@ -283,7 +284,7 @@ wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765 --env-file .env
 - Hindsight recall 默认先用 `user:<id>` + `all_strict` 严格检索，无结果再 fallback 到 conversation tags；其他后端使用统一 query/user/persona/history 契约。
 - 支持导出模拟聊天 transcript。
 - 支持 `openai`、`anthropic`、`gemini` provider。
-- 浏览器只调用本地 `/api/chat`，API key 只在 server-side proxy 使用；浏览器不得接收模型 base URL；默认不得接受浏览器传入的 provider 覆盖，默认不得接受浏览器传入的 model 覆盖，除非服务端显式开启 override；默认不得向浏览器返回 provider/memory 原始错误细节，除非服务端显式开启 debug errors。
+- 浏览器只调用本地 `/api/chat`，API key 只在 server-side proxy 使用；浏览器不得接收模型 base URL；浏览器不得接收 memory backend 名称或 bank_id，只能接收云记忆是否接入；默认不得接受浏览器传入的 provider 覆盖，默认不得接受浏览器传入的 model 覆盖，除非服务端显式开启 override；默认不得向浏览器返回 provider/memory 原始错误细节，除非服务端显式开启 debug errors。
 - 模型请求必须注入 skill 原文、最近聊天历史和服务端 recall 结果，要求回复符合 skill 风格。
 - 事实边界由 `.chat-memory.skill` 和 server-side harness prompt 约束；memory backend adapter 不写业务话题关键词。
 - 输入框支持 `Enter` 发送、`Shift+Enter` 换行。

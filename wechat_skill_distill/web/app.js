@@ -146,7 +146,7 @@ function renderInspector() {
   const memory = state.runtime.memory || {};
   els.modeValue.textContent = persona ? (persona.memoryAware ? "记忆陪伴" : "风格陪伴") : "未加载";
   els.sampleCountValue.textContent = persona ? String(persona.sampleCount) : "0";
-  els.memoryCountValue.textContent = memory.configured ? memory.backend : "未接入";
+  els.memoryCountValue.textContent = memory.configured ? "已接入" : "未接入";
   const title = persona ? persona.name : "智能陪伴";
   els.appTitle.textContent = title;
   els.brandMark.textContent = persona ? title.trim().slice(0, 1).toUpperCase() : "伴";
@@ -173,7 +173,7 @@ function renderStatePills() {
   const cloudMemory = state.runtime.memory || {};
   els.statePills.innerHTML = "";
   addPill(persona ? "风格已加载" : "未加载风格", persona ? "ok" : "warn");
-  addPill(cloudMemory.configured ? "记忆已连接" : "记忆未接入", cloudMemory.configured ? "ok" : "");
+  addPill(cloudMemory.configured ? "云记忆已接入" : "云记忆未接入", cloudMemory.configured ? "ok" : "");
   addPill(provider && provider.configured ? "服务已连接" : "服务未配置", provider && provider.configured ? "ok" : "warn");
 }
 
@@ -197,7 +197,7 @@ function renderCompanionStatus() {
   els.companionStatus.innerHTML = "";
   addStatus("陪伴对象", persona ? persona.name : "未加载");
   addStatus("风格来源", persona ? "服务端启动加载" : "等待服务端配置");
-  addStatus("记忆来源", cloudMemory.configured ? cloudMemory.backend : "未接入");
+  addStatus("云记忆", cloudMemory.configured ? "已接入" : "未接入");
   addStatus("本轮记忆", activeRecall() ? "已参考相关上下文" : "等待对话");
 }
 

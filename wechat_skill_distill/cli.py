@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import sys
 
+from .inspection import inspect_weflow_export
 from .memory import (
     GenericHttpBackend,
     HindsightBackend,
@@ -58,6 +59,45 @@ def cmd_weflow_guide(_: argparse.Namespace) -> int:
 4. 先运行：wechat-skill-distill doctor --input <export.json>
 """
     )
+    return 0
+
+
+def _print_inspection_report(report: dict) -> None:
+    date_range = report["date_range"]
+    print(f"input: {report['input']}")
+    print(f"messages: raw={report['raw_messages']} importable={report['importable_messages']} skipped={report['skipped_messages']}")
+    print(f"date_range: {date_range['start'] or '-'} -> {date_range['end'] or '-'}")
+    print("participants:")
+    for participant in report["participants"]:
+        print(f"  - {participant['user_id']} ({participant['name']}): {participant['message_count']} messages")
+    print("message_types:")
+    for message_type, count in report["message_types"].items():
+        print(f"  - {message_type}: {count}")
+    print("skipped_by_reason:")
+    if report["skipped_by_reason"]:
+        for reason, count in report["skipped_by_reason"].items():
+            print(f"  - {reason}: {count}")
+    else:
+        print("  - none: 0")
+    if report["unmapped_sender_keys"]:
+        print("unmapped_sender_keys:")
+        for key in report["unmapped_sender_keys"]:
+            print(f"  - {key}")
+
+
+def cmd_inspect(args: argparse.Namespace) -> int:
+    config = load_config(args.config)
+    participants = load_participants(args.participants, config)
+    report = inspect_weflow_export(args.input, participants=participants)
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(args.output)
+        return 0
+    if args.json:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        _print_inspection_report(report)
     return 0
 
 
@@ -141,6 +181,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     guide = sub.add_parser("weflow-guide", help="print WeFlow export guidance")
     guide.set_defaults(func=cmd_weflow_guide)
+
+    inspect_cmd = sub.add_parser("inspect", help="inspect a WeFlow JSON before importing")
+    inspect_cmd.add_argument("--input", required=True, type=Path)
+    inspect_cmd.add_argument("--config", type=Path)
+    inspect_cmd.add_argument("--participants", type=Path)
+    inspect_cmd.add_argument("--json", action="store_true")
+    inspect_cmd.add_argument("--output", type=Path)
+    inspect_cmd.set_defaults(func=cmd_inspect)
 
     extract = sub.add_parser("extract-skills", help="generate per-user chat skills from a WeFlow JSON")
     extract.add_argument("--input", required=True, type=Path)

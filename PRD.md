@@ -101,6 +101,7 @@ generated-chat-skills/Participant B.chat-memory.skill
 
 用户希望知道生成结果是否可信：
 
+- `inspect` 在导入前输出消息总数、可导入数、跳过原因、日期范围、参与者和消息类型分布。
 - `doctor` 检查输入文件、参与者映射、环境变量和输出目录。
 - 后续版本提供 `evaluate-skills`，检查风格覆盖率、样本泄漏、对方身份混入、隐私风险和记忆字段完整性。
 
@@ -204,6 +205,8 @@ generated-chat-skills/Participant B.chat-memory.skill
 ### FR7 用户体验
 
 - README 提供从安装、配置、示例运行到真实数据导入的完整路径。
+- `inspect` 能在导入前输出 raw/importable/skipped 消息数、日期范围、参与者统计、消息类型和跳过原因。
+- `inspect --json` 能输出结构化报告，`inspect --output` 能保存 JSON 报告。
 - `doctor` 能检查输入文件、消息数、参与者、必要环境变量。
 - 命令错误必须指出缺少哪个参数以及如何设置。
 - 所有远程写入命令支持先 dry-run。
@@ -234,6 +237,7 @@ generated-chat-skills/Participant B.chat-memory.skill
 ```bash
 wechat-skill-distill doctor --input chat.json --config config.local.json
 wechat-skill-distill weflow-guide
+wechat-skill-distill inspect --input chat.json --config config.local.json
 wechat-skill-distill extract-skills --input chat.json --out-dir generated-skills --config config.local.json
 wechat-skill-distill import --backend jsonl --input chat.json --output exports/memory.jsonl --dry-run --config config.local.json
 wechat-skill-distill generate-chat-skills --input chat.json --out-dir generated-chat-skills --memory-backend jsonl --config config.local.json
@@ -253,6 +257,8 @@ wechat-skill-distill init --wizard
 ### 当前 MVP 必须满足
 
 - `python3 -m unittest discover -s tests` 通过。
+- `wechat-skill-distill inspect --input examples/chat.json --config config.example.json` 能输出消息数、日期范围、参与者、消息类型和跳过原因。
+- `wechat-skill-distill inspect --input examples/chat.json --config config.example.json --json` 输出合法 JSON。
 - `wechat-skill-distill doctor --input examples/chat.json --config config.example.json` 能检查输入。
 - `wechat-skill-distill extract-skills --input examples/chat.json --out-dir /tmp/wsd/generated-skills --config config.example.json` 生成两个 `.skill`。
 - 生成的 `.skill` 不包含 `## 记忆检索`、`HINDSIGHT_API_KEY`、`MEM0_API_KEY`。
@@ -264,7 +270,6 @@ wechat-skill-distill init --wizard
 
 ### 下一阶段目标
 
-- 增加 `inspect`，输出参与者、日期范围、消息类型、跳过原因。
 - 增加 `evaluate-skills`，自动检查风格覆盖和混入风险。
 - 增加 redaction policy。
 - 增加 parser/backend 注册机制。
@@ -277,7 +282,7 @@ wechat-skill-distill init --wizard
 - WeFlow parser。
 - 无记忆 skill 与有记忆 chat-memory skill 分离。
 - JSONL、generic HTTP、Hindsight、Mem0 adapter。
-- README、config、doctor、单元测试。
+- README、config、inspect、doctor、单元测试。
 
 ### M2 产品可用性增强
 

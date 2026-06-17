@@ -11,6 +11,10 @@ from .models import ChatMessage
 
 
 LOCAL_TZ = ZoneInfo("Asia/Shanghai")
+SUPPORTED_MESSAGE_TYPES = {"文本消息", "引用消息"}
+SKIPPED_CONTENT_PLACEHOLDERS = {"[图片]", "[动画表情]", "[语音]", "[视频]"}
+
+
 def _clean_text(content: str) -> str:
     text = content.strip()
     if "[引用 " in text:
@@ -55,10 +59,10 @@ def load_weflow_messages(
         if not isinstance(raw, dict):
             continue
         message_type = str(raw.get("type") or "")
-        if message_type not in {"文本消息", "引用消息"}:
+        if message_type not in SUPPORTED_MESSAGE_TYPES:
             continue
         content = _clean_text(str(raw.get("content") or ""))
-        if not content or content in {"[图片]", "[动画表情]", "[语音]", "[视频]"}:
+        if not content or content in SKIPPED_CONTENT_PLACEHOLDERS:
             continue
         timestamp = _timestamp(raw)
         date = timestamp[:10]

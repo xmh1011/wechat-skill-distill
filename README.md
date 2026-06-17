@@ -61,8 +61,11 @@ This project does not automate WeChat itself. Use WeFlow to export a private cha
 
 ```bash
 wechat-skill-distill weflow-guide
+wechat-skill-distill inspect --input examples/chat.json --config config.local.json
 wechat-skill-distill doctor --input examples/chat.json --config config.local.json
 ```
+
+`inspect` shows raw/importable/skipped message counts, date range, participants, message type distribution, and skip reasons. Use `--json` for automation or `--output reports/inspect.json` to save the report.
 
 ## Generate Style Skills
 
@@ -182,6 +185,7 @@ generated-chat-skills/Participant B.chat-memory.skill
 
 ```bash
 python3 -m unittest discover -s tests
+wechat-skill-distill inspect --input examples/chat.json --config config.local.json
 wechat-skill-distill doctor --input examples/chat.json --config config.local.json
 wechat-skill-distill extract-skills --input examples/chat.json --out-dir generated-skills --config config.local.json
 wechat-skill-distill generate-chat-skills --input examples/chat.json --out-dir generated-chat-skills --memory-backend jsonl --config config.local.json

@@ -3,6 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
+from wechat_skill_distill.inspection import inspect_weflow_export
 from wechat_skill_distill.memory import build_memory_items, write_jsonl
 from wechat_skill_distill.skills import generate_skill_texts, write_skill_files
 from wechat_skill_distill.weflow import load_weflow_messages
@@ -123,6 +124,29 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("timestamp", rows[0]["metadata"])
         self.assertEqual(rows[0]["timestamp"], "2026-04-18T01:51:44+08:00")
         self.assertEqual(rows[0]["participants"], ["user-a"])
+
+    def test_inspect_weflow_export_reports_importable_and_skipped_messages(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "chat.json"
+            path.write_text(json.dumps(self.sample_export(), ensure_ascii=False), encoding="utf-8")
+
+            report = inspect_weflow_export(
+                path,
+                participants={
+                    "0": {"user_id": "user-a", "name": "Participant A"},
+                    "1": {"user_id": "user-b", "name": "Participant B"},
+                },
+            )
+
+        self.assertEqual(report["raw_messages"], 3)
+        self.assertEqual(report["importable_messages"], 2)
+        self.assertEqual(report["skipped_messages"], 1)
+        self.assertEqual(report["skipped_by_reason"], {"unsupported_type": 1})
+        self.assertEqual(report["message_types"], {"文本消息": 2, "系统消息": 1})
+        self.assertEqual(report["date_range"]["start"], "2026-04-18T01:51:44+08:00")
+        self.assertEqual(report["participants"][0]["user_id"], "user-a")
+        self.assertEqual(report["unmapped_sender_keys"], [])
+        self.assertIn("wxid_a", report["observed_sender_keys"])
 
 
 if __name__ == "__main__":

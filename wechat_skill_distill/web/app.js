@@ -42,7 +42,6 @@ function normalizePersona(skill) {
     name,
     userId,
     memoryAware: Boolean(skill.memoryAware),
-    phrases: Array.isArray(skill.phrases) ? skill.phrases : [],
     sampleCount: Number.isFinite(Number(skill.sampleCount)) ? Number(skill.sampleCount) : 0
   };
 }
@@ -167,9 +166,6 @@ function renderInspector() {
   } else {
     addToken(persona.name, "teal");
     addToken(persona.memoryAware ? "记忆陪伴" : "风格陪伴");
-    for (const phrase of persona.phrases.slice(0, 10)) {
-      addToken(phrase);
-    }
   }
   renderCompanionStatus();
   renderStatePills();

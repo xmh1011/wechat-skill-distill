@@ -46,7 +46,6 @@ def _skill_summary(asset: Mapping[str, str]) -> dict[str, Any]:
         "name": meta.name,
         "userId": meta.user_id or "-",
         "memoryAware": meta.memory_aware,
-        "phrases": meta.phrases,
         "sampleCount": meta.sample_count,
     }
 

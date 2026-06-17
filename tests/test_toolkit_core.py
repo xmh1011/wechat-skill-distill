@@ -298,12 +298,14 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertEqual(public[0]["userId"], "user-a")
         self.assertTrue(public[0]["memoryAware"])
         self.assertEqual(public[0]["sampleCount"], 1)
-        self.assertEqual(public[0]["phrases"], ["可以", "哈哈"])
+        self.assertNotIn("phrases", public[0])
         self.assertNotIn("text", public[0])
         self.assertNotIn("file_name", public[0])
         self.assertNotIn("raw", json.dumps(public, ensure_ascii=False))
         self.assertNotIn("A.chat-memory.skill", json.dumps(public, ensure_ascii=False))
         self.assertNotIn("这是不应发送到浏览器的完整样本", json.dumps(public, ensure_ascii=False))
+        self.assertNotIn("可以", json.dumps(public, ensure_ascii=False))
+        self.assertNotIn("哈哈", json.dumps(public, ensure_ascii=False))
 
     def test_skill_metadata_parser_is_consistent_across_public_api_and_evaluator(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -679,10 +681,12 @@ class ToolkitCoreTest(unittest.TestCase):
 
         self.assertIn("浏览器只接收 persona 摘要和 skill_id，不接收完整 skill 文本", readme)
         self.assertIn("也不接收本地 skill 文件名", readme)
+        self.assertIn("不接收常见表达短语", readme)
         self.assertIn("聊天请求只提交 skill_id", readme)
         self.assertIn("完整 skill 文本只保存在本地服务端", prd)
         self.assertIn("浏览器不得接收或回传 raw skill 文本", prd)
         self.assertIn("浏览器不得接收本地 skill 文件名", prd)
+        self.assertIn("浏览器不得接收常见表达短语", prd)
         self.assertIn("模型 base URL 和 API key 只保留在本地服务端", readme)
         self.assertIn("浏览器不得接收模型 base URL", prd)
         self.assertIn("浏览器不提交模型覆盖字段", readme)
@@ -924,6 +928,7 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("persona.sampleCount", source)
         self.assertIn("skill_id: personaId", source)
         self.assertNotIn("model: els.modelInput.value", source)
+        self.assertNotIn("persona.phrases", source)
         self.assertIn("els.providerSelect.disabled = true", source)
         self.assertIn("已配置 ${persona.sampleCount} 条风格样本", source)
         self.assertNotIn("persona.raw", source)

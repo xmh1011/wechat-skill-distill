@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import re
 import sys
 import tempfile
 from types import ModuleType
@@ -154,6 +155,38 @@ class ToolkitCoreTest(unittest.TestCase):
             self.assertEqual(report["summary"]["failed"], 0)
             self.assertEqual(report["skills"][0]["user_id"], "tenant/a b:01")
             self.assertEqual(report["skills"][0]["name"], "A/B:测试 人")
+
+    def test_generated_skill_artifacts_do_not_collide_for_duplicate_display_names(self) -> None:
+        export = self.sample_export()
+        export["messages"] = export["messages"][:2]
+        export["messages"][0]["senderDisplayName"] = "Alex/Dev"
+        export["messages"][1]["senderDisplayName"] = "Alex/Dev"
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "chat.json"
+            out_dir = Path(tmp) / "skills"
+            path.write_text(json.dumps(export, ensure_ascii=False), encoding="utf-8")
+            messages = load_weflow_messages(
+                path,
+                participants={
+                    "0": {"user_id": "team/a", "name": "Alex/Dev"},
+                    "1": {"user_id": "team:a", "name": "Alex/Dev"},
+                },
+            )
+
+            skills = generate_skill_texts(messages, include_memory=True, memory_backend="jsonl")
+            written = write_skill_files(skills, out_dir, suffix="chat-memory.skill")
+
+            skill_names = [re.search(r"^name:\s*(.+)$", text, re.MULTILINE).group(1) for text in skills.values()]
+            written_names = [path.name for path in written]
+            written_texts = [path.read_text(encoding="utf-8") for path in written]
+
+        self.assertEqual(len(skills), 2)
+        self.assertEqual(len(set(skill_names)), 2)
+        self.assertEqual(len(written), 2)
+        self.assertEqual(len(set(written_names)), 2)
+        self.assertTrue(all(name.startswith("Alex_Dev") for name in written_names))
+        self.assertTrue(any('user_id: "team/a"' in text for text in written_texts))
+        self.assertTrue(any('user_id: "team:a"' in text for text in written_texts))
 
     def test_memory_chat_skill_templates_describe_backend_neutral_recall_contracts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -504,8 +537,10 @@ class ToolkitCoreTest(unittest.TestCase):
 
         self.assertIn("输出文件名会从展示名派生并做文件系统安全转义", readme)
         self.assertIn("真实展示名和 user_id 保存在 skill frontmatter", readme)
+        self.assertIn("同名或安全化后同名时会追加短 hash 防止覆盖", readme)
         self.assertIn("skill frontmatter 必须包含稳定 `name`、`user_id` 和 `display_name`", prd)
         self.assertIn("输出文件名必须做文件系统安全转义", prd)
+        self.assertIn("同名或 slug 碰撞时必须追加稳定短 hash", prd)
 
     def test_generic_http_recall_backend_uses_common_runtime_contract(self) -> None:
         with patch("wechat_skill_distill.memory_recall.requests.post") as post:

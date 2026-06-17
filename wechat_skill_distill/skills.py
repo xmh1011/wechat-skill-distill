@@ -102,8 +102,11 @@ def _skill_slug(value: str, fallback: str = "user") -> str:
     slug = re.sub(r"[^A-Za-z0-9_-]+", "-", value.strip().lower()).strip("-_")
     if slug:
         return slug
-    digest = hashlib.sha1(value.encode("utf-8")).hexdigest()[:8]
-    return f"{fallback}-{digest}"
+    return f"{fallback}-{_short_hash(value)}"
+
+
+def _short_hash(value: object) -> str:
+    return hashlib.sha1(str(value).encode("utf-8")).hexdigest()[:8]
 
 
 def _safe_filename_stem(value: str, fallback: str = "user") -> str:
@@ -116,6 +119,21 @@ def _safe_filename_stem(value: str, fallback: str = "user") -> str:
     return stem
 
 
+def _unique_on_collision(values: dict[str, str]) -> dict[str, str]:
+    counts = Counter(values.values())
+    result: dict[str, str] = {}
+    used: set[str] = set()
+    for key, value in values.items():
+        candidate = value
+        if counts[value] > 1:
+            candidate = f"{value}-{_short_hash(key)}"
+        while candidate in used:
+            candidate = f"{value}-{_short_hash(f'{key}:{len(used)}')}"
+        result[key] = candidate
+        used.add(candidate)
+    return result
+
+
 def generate_skill_texts(
     messages: list[ChatMessage],
     *,
@@ -125,12 +143,17 @@ def generate_skill_texts(
     by_user = _messages_by_user(messages)
     skills: dict[str, str] = {}
     memory_text = MEMORY_BACKEND_TEXT.get(memory_backend, MEMORY_BACKEND_TEXT["generic-http"]) if include_memory else ""
+    raw_skill_slugs = {
+        user_id: _skill_slug(_one_line(user_id, "user"))
+        for user_id in by_user
+    }
+    skill_slugs = _unique_on_collision(raw_skill_slugs)
     for user_id, user_messages in by_user.items():
         if not user_messages:
             continue
         skill_user_id = _one_line(user_id, "user")
         name = _one_line(user_messages[0].sender_name, skill_user_id)
-        skill_name = f"chat-user-{_skill_slug(skill_user_id)}"
+        skill_name = f"chat-user-{skill_slugs[user_id]}"
         samples = "\n".join(f"```text\n{line}\n```" for line in _sample_lines(user_messages))
         title = f"{name} Chat Skill" if include_memory else f"{name} Skill"
         description = (
@@ -270,11 +293,14 @@ description: {description}
 def write_skill_files(skills: dict[str, str], out_dir: Path, *, suffix: str = "skill") -> list[Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
+    names: dict[str, str] = {}
     for user_id, text in skills.items():
         name_match = re.search(r"# (.+?) (?:Chat )?Skill", text)
         name = name_match.group(1) if name_match else f"user-{_skill_slug(_one_line(user_id, 'user'))}"
-        name = _safe_filename_stem(name)
-        path = out_dir / f"{name}.{suffix}"
+        names[user_id] = _safe_filename_stem(name)
+    unique_names = _unique_on_collision(names)
+    for user_id, text in skills.items():
+        path = out_dir / f"{unique_names[user_id]}.{suffix}"
         path.write_text(text.rstrip() + "\n", encoding="utf-8")
         written.append(path)
     return written

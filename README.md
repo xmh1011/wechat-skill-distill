@@ -94,7 +94,7 @@ generated-skills/Participant A.skill
 generated-skills/Participant B.skill
 ```
 
-输出文件名会从展示名派生并做文件系统安全转义；真实展示名和 user_id 保存在 skill frontmatter，前端和评估器不会依赖文件名反推身份。
+输出文件名会从展示名派生并做文件系统安全转义；真实展示名和 user_id 保存在 skill frontmatter，前端和评估器不会依赖文件名反推身份。同名或安全化后同名时会追加短 hash 防止覆盖。
 
 Each skill is independent and contains only that user’s style profile and examples. It does not contain a memory backend, recall instructions, or API key references.
 
@@ -188,7 +188,7 @@ generated-chat-skills/Participant A.chat-memory.skill
 generated-chat-skills/Participant B.chat-memory.skill
 ```
 
-输出文件名会从展示名派生并做文件系统安全转义；真实展示名和 user_id 保存在 skill frontmatter，前端和评估器不会依赖文件名反推身份。
+输出文件名会从展示名派生并做文件系统安全转义；真实展示名和 user_id 保存在 skill frontmatter，前端和评估器不会依赖文件名反推身份。同名或安全化后同名时会追加短 hash 防止覆盖。
 
 ## Simulate Chat With A Model
 

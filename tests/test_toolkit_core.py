@@ -14,7 +14,7 @@ from wechat_skill_distill.model_client import build_companion_prompt, generate_c
 from wechat_skill_distill.redaction import redact_weflow_export
 from wechat_skill_distill.skills import generate_skill_texts, write_skill_files
 from wechat_skill_distill.weflow import load_weflow_messages
-from wechat_skill_distill.web_server import load_skill_assets, web_root
+from wechat_skill_distill.web_server import build_enriched_chat_payload, load_skill_assets, web_root
 
 
 class MockResponse:
@@ -525,6 +525,40 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("persona.name", source)
         self.assertIn("已配置 ${persona.samples.length} 条风格样本", source)
         self.assertNotIn("组场景示例", source)
+        self.assertNotIn("后台模型未配置", source)
+
+    def test_frontend_does_not_run_browser_side_memory_retrieval(self) -> None:
+        root = web_root()
+        source = (root / "index.html").read_text(encoding="utf-8") + "\n" + (root / "app.js").read_text(encoding="utf-8")
+
+        self.assertNotIn("memoryFile", source)
+        self.assertNotIn("searchMemory", source)
+        self.assertNotIn("keywordSet", source)
+        self.assertNotIn("memory_hits:", source)
+        self.assertNotIn("记忆 JSONL", source)
+        self.assertIn("记忆由本地服务端按配置检索", source)
+
+    def test_chat_server_ignores_client_memory_hits_by_default(self) -> None:
+        payload = {
+            "message": "你之前说过什么",
+            "memory_hits": [{"content": "浏览器伪造的事实"}],
+        }
+
+        enriched, counts = build_enriched_chat_payload(payload, [{"content": "服务端召回的事实"}], env={})
+
+        self.assertEqual(enriched["memory_hits"], [{"content": "服务端召回的事实"}])
+        self.assertEqual(counts, {"server_hits": 1, "local_hits": 0})
+
+    def test_chat_server_can_explicitly_allow_client_memory_hits(self) -> None:
+        payload = {
+            "message": "你之前说过什么",
+            "memory_hits": [{"content": "显式允许的本地事实"}],
+        }
+
+        enriched, counts = build_enriched_chat_payload(payload, [{"content": "服务端召回的事实"}], env={"WSD_ALLOW_CLIENT_MEMORY_HITS": "1"})
+
+        self.assertEqual([hit["content"] for hit in enriched["memory_hits"]], ["显式允许的本地事实", "服务端召回的事实"])
+        self.assertEqual(counts, {"server_hits": 1, "local_hits": 1})
 
     def test_openai_compatible_chat_call_uses_server_side_protocol(self) -> None:
         with patch("wechat_skill_distill.model_client.requests.post") as post:

@@ -54,10 +54,6 @@
 
         <details class="panel settings-panel">
           <summary>后台设置</summary>
-          <label class="file-pick">
-            <span>记忆 JSONL</span>
-            <input id="memoryFile" type="file" accept=".jsonl,.json,.txt" />
-          </label>
           <label class="field">
             <span>模型协议</span>
             <select id="providerSelect" aria-label="模型协议"></select>
@@ -66,7 +62,7 @@
             <span>模型</span>
             <input id="modelInput" type="text" autocomplete="off" placeholder="由服务端环境变量决定" />
           </label>
-          <p id="modelHint" class="hint">API key 只在本地服务端读取。</p>
+          <p id="modelHint" class="hint">API key 只在本地服务端读取；记忆由本地服务端按配置检索。</p>
         </details>
       </aside>
 

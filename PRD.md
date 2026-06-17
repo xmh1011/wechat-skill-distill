@@ -261,7 +261,7 @@ wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765 --env-file .env
 - 支持 `--skill <file>` 从服务启动时预加载一个或多个 `.skill` / `.chat-memory.skill`。
 - 使用 package 内置静态资源，不要求 Node.js 或前端构建链。
 - 前端不提供 skill 文件选择入口；persona 来自服务端启动参数。
-- 支持加载 JSONL 记忆文件，按输入关键词做本地检索，但不展示 raw memory hits。
+- 前端不上传记忆文件、不做浏览器侧检索；JSONL 记忆通过服务端 `JSONL_MEMORY_PATH` 接入。
 - 支持 backend-neutral server-side recall：`/api/chat` 可通过 Hindsight、Generic HTTP、Mem0 或 JSONL 在模型调用前自动检索相关记忆。
 - `/api/chat` 不向浏览器返回 raw memory hits，只返回召回状态摘要。
 - recall query 必须包含当前用户原话、最近用户追问和目标 persona；轻量寒暄默认不召回。
@@ -270,7 +270,7 @@ wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765 --env-file .env
 - 支持导出模拟聊天 transcript。
 - 支持 `openai`、`anthropic`、`gemini` provider。
 - 浏览器只调用本地 `/api/chat`，API key 只在 server-side proxy 使用。
-- 模型请求必须注入 skill 原文、最近聊天历史、本地检索结果和服务端 recall 结果，要求回复符合 skill 风格。
+- 模型请求必须注入 skill 原文、最近聊天历史和服务端 recall 结果，要求回复符合 skill 风格。
 - 事实边界由 `.chat-memory.skill` 和 server-side harness prompt 约束；memory backend adapter 不写业务话题关键词。
 - 输入框支持 `Enter` 发送、`Shift+Enter` 换行。
 - 模拟内容不写回记忆库。
@@ -335,7 +335,7 @@ wechat-skill-distill init --wizard
 - `wechat-skill-distill chat-ui --host 127.0.0.1 --port <free-port> --skill <skill-file>` 能启动本地前端页面并自动加载 persona。
 - chat UI 静态资源包含 `index.html`、`app.js`、`styles.css`，安装后可通过 package data 访问。
 - `chat-ui` 提供 `/api/runtime`、`/api/skills` 和 `/api/chat`，支持 OpenAI-compatible、Anthropic、Gemini 协议配置。
-- `/api/chat` 在 Hindsight recall 配置可用时会先检索记忆，再把命中结果注入模型请求，但不把 raw memory hits 返回给前端。
+- `/api/chat` 在 runtime recall 后端配置可用时会先检索记忆，再把命中结果注入模型请求，但不把 raw memory hits 返回给前端。
 - 前端输入框支持 `Enter` 发送、`Shift+Enter` 换行，并在对方回复期间展示等待和错误状态。
 - `wechat-skill-distill evaluate-skills --skills <generated-skill-dir> --input examples/chat.json --config config.example.json --json` 输出合法 JSON，并能报告 passed/failed/warnings。
 - 仓库中不得出现真实 API key、特定私人聊天人名或私人聊天文件依赖。

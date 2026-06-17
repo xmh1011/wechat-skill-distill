@@ -221,8 +221,7 @@ h2 {
   content: "收起";
 }
 
-.field,
-.file-pick {
+.field {
   display: grid;
   gap: 6px;
   margin-top: 12px;
@@ -230,7 +229,6 @@ h2 {
   font-size: 12px;
 }
 
-input[type="file"],
 input[type="text"],
 select {
   width: 100%;

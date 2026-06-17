@@ -1,7 +1,6 @@
 const state = {
   personas: [],
   activeId: "",
-  memoryRows: [],
   transcript: [],
   runtime: { default_provider: "openai", providers: [] },
   lastRecall: null,
@@ -9,7 +8,6 @@ const state = {
 };
 
 const els = {
-  memoryFile: document.getElementById("memoryFile"),
   providerSelect: document.getElementById("providerSelect"),
   modelInput: document.getElementById("modelInput"),
   modelHint: document.getElementById("modelHint"),
@@ -88,10 +86,10 @@ function renderRuntimeStatus() {
   const ready = Boolean(provider && provider.configured && model);
   els.runtimeStatus.textContent = ready
     ? "陪伴服务已连接"
-    : "后台模型未配置";
+    : "服务未配置";
   els.modelHint.textContent = ready
-    ? "请求会从本地服务端转发，浏览器不保存 API key。"
-    : "请在 .env 中配置对应 provider 的 API key 和 model。";
+    ? "请求会从本地服务端转发，浏览器不保存 API key；记忆由本地服务端按配置检索。"
+    : "请在 .env 中配置对应 provider 的 API key 和 model；记忆由本地服务端按配置检索。";
   renderStatePills();
 }
 
@@ -116,10 +114,11 @@ function activePersona() {
 
 function renderInspector() {
   const persona = activePersona();
+  const memory = state.runtime.memory || {};
   els.modeValue.textContent = persona ? (persona.memoryAware ? "记忆陪伴" : "风格陪伴") : "未加载";
   els.userIdValue.textContent = persona ? persona.userId : "-";
   els.sampleCountValue.textContent = persona ? String(persona.samples.length) : "0";
-  els.memoryCountValue.textContent = `${state.memoryRows.length} 条`;
+  els.memoryCountValue.textContent = memory.configured ? memory.backend : "未接入";
   const title = persona ? persona.name : "智能陪伴";
   els.appTitle.textContent = title;
   els.brandMark.textContent = persona ? title.trim().slice(0, 1).toUpperCase() : "S";
@@ -149,7 +148,7 @@ function renderStatePills() {
   const cloudMemory = state.runtime.memory || {};
   els.statePills.innerHTML = "";
   addPill(persona ? "风格已加载" : "未加载风格", persona ? "ok" : "warn");
-  addPill(cloudMemory.configured ? "云记忆已连接" : `${state.memoryRows.length} 条本地记忆`, cloudMemory.configured || state.memoryRows.length ? "ok" : "");
+  addPill(cloudMemory.configured ? "记忆已连接" : "记忆未接入", cloudMemory.configured ? "ok" : "");
   addPill(provider && provider.configured ? "服务已连接" : "服务未配置", provider && provider.configured ? "ok" : "warn");
 }
 
@@ -173,8 +172,7 @@ function renderCompanionStatus() {
   els.companionStatus.innerHTML = "";
   addStatus("陪伴对象", persona ? persona.name : "未加载");
   addStatus("风格来源", persona ? "服务端启动加载" : "等待服务端配置");
-  addStatus("云记忆", cloudMemory.configured ? "已接入" : "未接入");
-  addStatus("本地素材", state.memoryRows.length ? `${state.memoryRows.length} 条` : "未加载");
+  addStatus("记忆来源", cloudMemory.configured ? cloudMemory.backend : "未接入");
   addStatus("本轮记忆", state.lastRecall ? "已参考相关上下文" : "等待对话");
 }
 
@@ -209,46 +207,6 @@ function updateMessage(node, text, options = {}) {
   els.chatLog.scrollTop = els.chatLog.scrollHeight;
 }
 
-function keywordSet(input) {
-  return [...new Set(input.split(/[^\p{L}\p{N}]+/u).map((item) => item.trim()).filter((item) => item.length >= 2))];
-}
-
-function searchMemory(input, persona) {
-  if (!state.memoryRows.length) return [];
-  const keys = keywordSet(input);
-  return state.memoryRows.filter((row) => {
-    const text = `${row.content || ""} ${JSON.stringify(row.metadata || {})}`;
-    const sameUser = !persona || !row.metadata || !row.metadata.userID || row.metadata.userID === persona.userId;
-    return sameUser && keys.some((key) => text.includes(key));
-  });
-}
-
-async function readTextFile(file) {
-  return file.text();
-}
-
-async function loadMemoryFile(file) {
-  const text = await readTextFile(file);
-  const rows = [];
-  const errors = [];
-  text.split(/\n+/).forEach((line, index) => {
-    const trimmed = line.trim();
-    if (!trimmed) return;
-    try {
-      rows.push(JSON.parse(trimmed));
-    } catch (error) {
-      errors.push(index + 1);
-    }
-  });
-  state.memoryRows = rows;
-  renderInspector();
-  if (errors.length) {
-    appendMessage("system", `已加载 ${rows.length} 条记忆，跳过 ${errors.length} 行无法解析的 JSONL。`);
-  } else {
-    appendMessage("system", `已加载 ${rows.length} 条记忆。`);
-  }
-}
-
 function exportTranscript() {
   const blob = new Blob([JSON.stringify(state.transcript, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -272,7 +230,6 @@ async function sendMessage(input) {
     appendMessage("system", "服务未加载陪伴对象，请用 --skill 启动。");
     return;
   }
-  const hits = searchMemory(input, persona);
   const history = recentHistory();
   renderInspector();
   appendMessage("user", input);
@@ -290,7 +247,6 @@ async function sendMessage(input) {
         message: input,
         skill: persona.raw,
         persona: { name: persona.name, userId: persona.userId },
-        memory_hits: hits.slice(0, 8),
         history
       })
     });
@@ -358,10 +314,6 @@ async function loadServerSkills() {
   }
 }
 
-els.memoryFile.addEventListener("change", (event) => {
-  const file = event.target.files[0];
-  if (file) loadMemoryFile(file);
-});
 els.providerSelect.addEventListener("change", syncModelInput);
 els.modelInput.addEventListener("input", renderRuntimeStatus);
 els.personaSelect.addEventListener("change", (event) => {

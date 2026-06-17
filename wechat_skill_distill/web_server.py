@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from functools import partial
 import json
+import os
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 from urllib.parse import urlparse
 
 from .memory_recall import MemoryRecallError, memory_runtime_status, recall_for_chat
@@ -31,6 +32,21 @@ def load_skill_assets(skill_paths: list[Path] | None = None) -> list[dict[str, s
             }
         )
     return assets
+
+
+def _truthy(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def build_enriched_chat_payload(payload: dict[str, Any], server_hits: list[dict[str, Any]], *, env: Mapping[str, str] | None = None) -> tuple[dict[str, Any], dict[str, int]]:
+    current_env = env or os.environ
+    local_hits: list[dict[str, Any]] = []
+    if _truthy(str(current_env.get("WSD_ALLOW_CLIENT_MEMORY_HITS", ""))):
+        raw_hits = payload.get("memory_hits")
+        if isinstance(raw_hits, list):
+            local_hits = [hit for hit in raw_hits if isinstance(hit, dict)]
+    enriched = {**payload, "memory_hits": [*local_hits, *server_hits]}
+    return enriched, {"server_hits": len(server_hits), "local_hits": len(local_hits)}
 
 
 class ChatUIHandler(SimpleHTTPRequestHandler):
@@ -77,12 +93,9 @@ class ChatUIHandler(SimpleHTTPRequestHandler):
             return
         try:
             server_hits = recall_for_chat(payload)
-            existing_hits = payload.get("memory_hits") if isinstance(payload, dict) else []
-            if not isinstance(existing_hits, list):
-                existing_hits = []
-            enriched_payload = {**payload, "memory_hits": [*existing_hits, *server_hits]}
+            enriched_payload, memory_counts = build_enriched_chat_payload(payload, server_hits)
             reply = generate_chat_reply(enriched_payload)
-            reply["memory"] = {"server_hits": len(server_hits), "local_hits": len(existing_hits)}
+            reply["memory"] = memory_counts
         except MemoryRecallError as exc:
             self._write_json(502, {"error": str(exc), "kind": "memory"})
             return

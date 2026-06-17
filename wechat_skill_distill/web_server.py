@@ -58,8 +58,15 @@ def public_memory_runtime_status(env: Mapping[str, str] | None = None) -> dict[s
     return {"configured": bool(status.get("configured"))}
 
 
+def public_service_runtime_status(env: Mapping[str, str] | None = None) -> dict[str, Any]:
+    status = runtime_status(env)
+    providers = status.get("providers") if isinstance(status, Mapping) else []
+    configured = any(bool(provider.get("configured")) for provider in providers if isinstance(provider, Mapping))
+    return {"configured": configured}
+
+
 def public_runtime_payload(env: Mapping[str, str] | None = None) -> dict[str, Any]:
-    return {**runtime_status(env), "memory": public_memory_runtime_status(env)}
+    return {"service": public_service_runtime_status(env), "memory": public_memory_runtime_status(env)}
 
 
 def resolve_preloaded_skill_payload(payload: dict[str, Any], assets: list[dict[str, str]]) -> dict[str, Any]:

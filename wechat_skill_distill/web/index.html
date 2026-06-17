@@ -48,25 +48,13 @@
           </dl>
         </section>
 
-        <details class="panel settings-panel">
-          <summary>后台设置</summary>
-          <label class="field">
-            <span>模型协议</span>
-            <select id="providerSelect" aria-label="模型协议"></select>
-          </label>
-          <label class="field">
-            <span>模型</span>
-            <input id="modelInput" type="text" autocomplete="off" placeholder="由服务端环境变量决定" readonly />
-          </label>
-          <p id="modelHint" class="hint">API key 只在本地服务端读取；记忆由本地服务端按配置检索。</p>
-        </details>
       </aside>
 
       <main class="chat-shell">
         <div class="conversation-meta">
           <div>
             <strong id="conversationTitle">正在读取陪伴对象</strong>
-            <span id="conversationSub">模型会按 skill 风格生成回复</span>
+            <span id="conversationSub">会按 skill 风格生成回复</span>
             <span id="typingStatus" class="typing-status" hidden>对方正在输入中...</span>
           </div>
           <div id="statePills" class="state-pills"></div>

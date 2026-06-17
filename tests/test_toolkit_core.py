@@ -584,14 +584,21 @@ class ToolkitCoreTest(unittest.TestCase):
             {
                 "HINDSIGHT_API_KEY": "secret",
                 "HINDSIGHT_BANK_ID": "private-bank",
-                "MODEL_PROVIDER": "openai",
+                "WSD_MODEL_PROVIDER": "openai",
+                "WSD_OPENAI_MODEL": "deepseek-v4-flash",
+                "WSD_OPENAI_API_KEY": "model-secret",
             }
         )
 
+        self.assertEqual(report["service"], {"configured": True})
         self.assertEqual(report["memory"], {"configured": True})
         serialized = json.dumps(report, ensure_ascii=False)
         self.assertNotIn("hindsight", serialized.lower())
         self.assertNotIn("private-bank", serialized)
+        self.assertNotIn("openai", serialized.lower())
+        self.assertNotIn("deepseek", serialized.lower())
+        self.assertNotIn("provider", serialized.lower())
+        self.assertNotIn("model", serialized.lower())
 
     def test_companion_prompt_includes_skill_and_memory_constraints(self) -> None:
         prompt = build_companion_prompt(
@@ -824,6 +831,8 @@ class ToolkitCoreTest(unittest.TestCase):
 
         self.assertIn("前端不上传记忆文件、不做浏览器侧检索", text)
         self.assertIn("JSONL 记忆通过服务端 `JSONL_MEMORY_PATH` 接入", text)
+        self.assertIn("provider/model 选择只属于服务端配置", text)
+        self.assertNotIn("模型协议选择", text)
         self.assertNotIn("页面能加载本地 `memory.jsonl` 并在回复时展示命中结果", text)
         self.assertNotIn("本地检索结果和服务端 recall 结果", text)
         self.assertNotIn("JSONL contract 说明宿主 agent 需要先做本地检索再注入上下文", text)
@@ -892,8 +901,11 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("浏览器不得接收本地 skill 文件名", prd)
         self.assertIn("浏览器不得接收 user_id", prd)
         self.assertIn("浏览器不得接收常见表达短语", prd)
-        self.assertIn("模型 base URL 和 API key 只保留在本地服务端", readme)
+        self.assertIn("模型 base URL、provider、model 和 API key 只保留在本地服务端", readme)
         self.assertIn("浏览器不得接收模型 base URL", prd)
+        self.assertIn("浏览器不得接收 provider/model 摘要", prd)
+        self.assertIn("/api/runtime` 只返回服务是否已连接和云记忆是否接入", readme)
+        self.assertNotIn("/api/runtime` 只返回 provider、model", readme)
         self.assertIn("浏览器不提交模型覆盖字段", readme)
         self.assertIn("浏览器不提交 provider 覆盖字段", readme)
         self.assertIn("默认不得接受浏览器传入的 model 覆盖", prd)
@@ -902,7 +914,7 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("默认不得向浏览器返回 provider/memory 原始错误细节", prd)
         self.assertIn("聊天响应只返回文本和记忆计数", readme)
         self.assertIn("不得返回 provider、model 或 usage", prd)
-        self.assertIn("浏览器只接收云记忆是否接入", readme)
+        self.assertIn("只返回服务是否已连接和云记忆是否接入", readme)
         self.assertIn("浏览器不得接收 memory backend 名称或 bank_id", prd)
         self.assertIn("WSD_ALLOW_CLIENT_PROVIDER_OVERRIDE=0", env_example)
         self.assertIn("WSD_ALLOW_CLIENT_MODEL_OVERRIDE=0", env_example)
@@ -1143,8 +1155,13 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertNotIn("persona.userId", source)
         self.assertNotIn("userId:", source)
         self.assertNotIn("model: els.modelInput.value", source)
+        self.assertNotIn("providerSelect", source)
+        self.assertNotIn("modelInput", source)
+        self.assertNotIn("后台设置", source)
+        self.assertNotIn("模型协议", source)
+        self.assertNotIn("default_provider", source)
+        self.assertNotIn("providers", source)
         self.assertNotIn("persona.phrases", source)
-        self.assertIn("els.providerSelect.disabled = true", source)
         self.assertIn("已配置 ${persona.sampleCount} 条风格样本", source)
         self.assertNotIn("persona.raw", source)
         self.assertNotIn("parseSkill", source)

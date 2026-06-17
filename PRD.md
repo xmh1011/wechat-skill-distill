@@ -127,7 +127,7 @@ wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765 --env-file .env
 
 - 页面能通过服务启动参数预加载一个或多个 `.skill` / `.chat-memory.skill` 文件。
 - 页面不上传本地记忆文件、不展示 raw memory hits；记忆由服务端 runtime recall 后端检索并注入模型上下文。
-- 页面提供 persona 选择、模型协议选择、聊天窗口、输入框、转录导出。
+- 页面提供 persona 选择、服务状态展示、聊天窗口、输入框、转录导出；provider/model 选择只属于服务端配置。
 - 页面通过本地 server-side proxy 调用模型，浏览器不保存或发送 API key。
 - MVP 支持 OpenAI-compatible chat completions、Anthropic Messages API、Gemini generateContent。
 - 输入框支持 `Enter` 发送、`Shift+Enter` 换行。
@@ -284,7 +284,7 @@ wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765 --env-file .env
 - Hindsight recall 默认先用 `user:<id>` + `all_strict` 严格检索，无结果再 fallback 到 conversation tags；其他后端使用统一 query/user/persona/history 契约。
 - 支持导出模拟聊天 transcript。
 - 支持 `openai`、`anthropic`、`gemini` provider。
-- 浏览器只调用本地 `/api/chat`，API key 只在 server-side proxy 使用；浏览器不得接收模型 base URL；浏览器不得接收 memory backend 名称或 bank_id，只能接收云记忆是否接入；默认不得接受浏览器传入的 provider 覆盖，默认不得接受浏览器传入的 model 覆盖，除非服务端显式开启 override；聊天响应不得返回 provider、model 或 usage；默认不得向浏览器返回 provider/memory 原始错误细节，除非服务端显式开启 debug errors。
+- 浏览器只调用本地 `/api/chat`，API key 只在 server-side proxy 使用；浏览器不得接收模型 base URL；浏览器不得接收 provider/model 摘要；浏览器不得接收 memory backend 名称或 bank_id，只能接收服务是否已连接和云记忆是否接入；默认不得接受浏览器传入的 provider 覆盖，默认不得接受浏览器传入的 model 覆盖，除非服务端显式开启 override；聊天响应不得返回 provider、model 或 usage；默认不得向浏览器返回 provider/memory 原始错误细节，除非服务端显式开启 debug errors。
 - 模型请求必须注入 skill 原文、最近聊天历史和服务端 recall 结果，要求回复符合 skill 风格。
 - 事实边界由 `.chat-memory.skill` 和 server-side harness prompt 约束；memory backend adapter 不写业务话题关键词。
 - 输入框支持 `Enter` 发送、`Shift+Enter` 换行。

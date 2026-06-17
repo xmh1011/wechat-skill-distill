@@ -2,15 +2,12 @@ const state = {
   personas: [],
   activeId: "",
   transcriptsByPersona: {},
-  runtime: { default_provider: "openai", providers: [] },
+  runtime: { service: { configured: false }, memory: { configured: false } },
   lastRecallByPersona: {},
   busy: false
 };
 
 const els = {
-  providerSelect: document.getElementById("providerSelect"),
-  modelInput: document.getElementById("modelInput"),
-  modelHint: document.getElementById("modelHint"),
   personaSelect: document.getElementById("personaSelect"),
   modeValue: document.getElementById("modeValue"),
   sampleCountValue: document.getElementById("sampleCountValue"),
@@ -43,45 +40,12 @@ function normalizePersona(skill) {
   };
 }
 
-function providerByName(name) {
-  return state.runtime.providers.find((provider) => provider.provider === name) || null;
-}
-
-function renderProviders() {
-  els.providerSelect.innerHTML = "";
-  const providers = state.runtime.providers.length ? state.runtime.providers : [
-    { provider: "openai", model: "", configured: false },
-    { provider: "anthropic", model: "", configured: false },
-    { provider: "gemini", model: "", configured: false }
-  ];
-  for (const provider of providers) {
-    const option = document.createElement("option");
-    option.value = provider.provider;
-    option.textContent = `${provider.provider}${provider.configured ? "" : "（未配置）"}`;
-    els.providerSelect.appendChild(option);
-  }
-  els.providerSelect.value = state.runtime.default_provider || providers[0].provider;
-  els.providerSelect.disabled = true;
-  syncModelInput();
-  renderRuntimeStatus();
-}
-
-function syncModelInput() {
-  const provider = providerByName(els.providerSelect.value);
-  els.modelInput.value = provider && provider.model ? provider.model : "";
-  renderRuntimeStatus();
-}
-
 function renderRuntimeStatus() {
-  const provider = providerByName(els.providerSelect.value);
-  const model = els.modelInput.value.trim() || (provider && provider.model) || "";
-  const ready = Boolean(provider && provider.configured && model);
+  const service = state.runtime.service || {};
+  const ready = Boolean(service.configured);
   els.runtimeStatus.textContent = ready
     ? "陪伴服务已连接"
     : "服务未配置";
-  els.modelHint.textContent = ready
-    ? "模型协议、模型和 API key 由本地服务端环境变量决定；记忆由本地服务端按配置检索。"
-    : "请在 .env 中配置服务端 provider、API key 和 model；记忆由本地服务端按配置检索。";
   renderStatePills();
 }
 
@@ -169,12 +133,12 @@ function renderInspector() {
 
 function renderStatePills() {
   const persona = activePersona();
-  const provider = providerByName(els.providerSelect.value);
+  const service = state.runtime.service || {};
   const cloudMemory = state.runtime.memory || {};
   els.statePills.innerHTML = "";
   addPill(persona ? "风格已加载" : "未加载风格", persona ? "ok" : "warn");
   addPill(cloudMemory.configured ? "云记忆已接入" : "云记忆未接入", cloudMemory.configured ? "ok" : "");
-  addPill(provider && provider.configured ? "服务已连接" : "服务未配置", provider && provider.configured ? "ok" : "warn");
+  addPill(service.configured ? "服务已连接" : "服务未配置", service.configured ? "ok" : "warn");
 }
 
 function addPill(text, tone = "") {
@@ -198,6 +162,7 @@ function renderCompanionStatus() {
   addStatus("陪伴对象", persona ? persona.name : "未加载");
   addStatus("风格来源", persona ? "服务端启动加载" : "等待服务端配置");
   addStatus("云记忆", cloudMemory.configured ? "已接入" : "未接入");
+  addStatus("记忆方式", "记忆由本地服务端按配置检索");
   addStatus("本轮记忆", activeRecall() ? "已参考相关上下文" : "等待对话");
 }
 
@@ -335,10 +300,10 @@ async function loadRuntime() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     state.runtime = await response.json();
   } catch (error) {
-    state.runtime = { default_provider: "openai", providers: [] };
-    els.runtimeStatus.textContent = `无法读取模型服务：${error.message}`;
+    state.runtime = { service: { configured: false }, memory: { configured: false } };
+    els.runtimeStatus.textContent = `无法读取陪伴服务：${error.message}`;
   }
-  renderProviders();
+  renderRuntimeStatus();
 }
 
 async function loadServerSkills() {
@@ -363,8 +328,6 @@ async function loadServerSkills() {
   }
 }
 
-els.providerSelect.addEventListener("change", syncModelInput);
-els.modelInput.addEventListener("input", renderRuntimeStatus);
 els.personaSelect.addEventListener("change", (event) => {
   switchPersona(event.target.value, { announce: true });
 });

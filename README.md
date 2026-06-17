@@ -189,12 +189,12 @@ generated-chat-skills/Participant B.chat-memory.skill
 ## Simulate Chat With A Model
 
 ```bash
-wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765 --env-file .env
+wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765 --env-file .env --skill generated-chat-skills/Participant A.chat-memory.skill
 ```
 
-Open the printed URL, load one or more `.skill` / `.chat-memory.skill` files, optionally load a `memory.jsonl`, then chat with the selected persona. The page calls the local `chat-ui` server, and the server calls the configured model provider. API keys stay in `.env` or environment variables and are never sent to the browser.
+Open the printed URL and chat with the preloaded persona. Pass `--skill` multiple times to preload multiple personas. The page calls the local `chat-ui` server, and the server calls the configured model provider. API keys stay in `.env` or environment variables and are never sent to the browser.
 
-If Hindsight recall is configured, `/api/chat` recalls relevant memories before calling the model and injects those hits with the selected skill. The recall adapter stays generic; factual boundaries are enforced by the generated `.chat-memory.skill` and the server-side companion prompt.
+If Hindsight recall is configured, `/api/chat` recalls relevant memories before calling the model and injects those hits with the selected skill. Raw memory hits are not returned to the browser; the UI only shows whether related context was referenced. The recall adapter stays generic; factual boundaries are enforced by the generated `.chat-memory.skill` and the server-side companion prompt.
 
 ```bash
 WSD_MEMORY_RECALL_BACKEND=hindsight

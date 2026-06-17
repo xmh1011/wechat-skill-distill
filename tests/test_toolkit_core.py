@@ -12,7 +12,7 @@ from wechat_skill_distill.model_client import build_companion_prompt, generate_c
 from wechat_skill_distill.redaction import redact_weflow_export
 from wechat_skill_distill.skills import generate_skill_texts, write_skill_files
 from wechat_skill_distill.weflow import load_weflow_messages
-from wechat_skill_distill.web_server import web_root
+from wechat_skill_distill.web_server import load_skill_assets, web_root
 
 
 class MockResponse:
@@ -170,6 +170,17 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertTrue((root / "index.html").exists())
         self.assertTrue((root / "app.js").exists())
         self.assertTrue((root / "styles.css").exists())
+
+    def test_chat_ui_preloads_skill_assets_from_startup_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "Participant A.chat-memory.skill"
+            path.write_text("# Participant A Chat Skill\n\n模拟 userID=user-a 的回复。\n", encoding="utf-8")
+
+            assets = load_skill_assets([path])
+
+        self.assertEqual(assets[0]["id"], "server-skill-1")
+        self.assertEqual(assets[0]["file_name"], "Participant A.chat-memory.skill")
+        self.assertIn("Participant A Chat Skill", assets[0]["text"])
 
     def test_evaluate_skills_reports_pass_and_identity_leakage(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -16,7 +16,26 @@ def web_root() -> Path:
     return Path(str(files("wechat_skill_distill").joinpath("web")))
 
 
+def load_skill_assets(skill_paths: list[Path] | None = None) -> list[dict[str, str]]:
+    assets = []
+    for index, path in enumerate(skill_paths or [], start=1):
+        if not path.exists():
+            raise RuntimeError(f"skill file not found: {path}")
+        if not path.is_file():
+            raise RuntimeError(f"skill path is not a file: {path}")
+        assets.append(
+            {
+                "id": f"server-skill-{index}",
+                "file_name": path.name,
+                "text": path.read_text(encoding="utf-8"),
+            }
+        )
+    return assets
+
+
 class ChatUIHandler(SimpleHTTPRequestHandler):
+    preloaded_skills: list[dict[str, str]] = []
+
     def _write_json(self, status: int, payload: dict[str, Any]) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
@@ -30,6 +49,9 @@ class ChatUIHandler(SimpleHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/api/runtime":
             self._write_json(200, {**runtime_status(), "memory": memory_runtime_status()})
+            return
+        if path == "/api/skills":
+            self._write_json(200, {"skills": self.preloaded_skills})
             return
         super().do_GET()
 
@@ -60,8 +82,7 @@ class ChatUIHandler(SimpleHTTPRequestHandler):
                 existing_hits = []
             enriched_payload = {**payload, "memory_hits": [*existing_hits, *server_hits]}
             reply = generate_chat_reply(enriched_payload)
-            reply["memory_hits"] = enriched_payload["memory_hits"]
-            reply["memory"] = {"server_hits": len(server_hits)}
+            reply["memory"] = {"server_hits": len(server_hits), "local_hits": len(existing_hits)}
         except MemoryRecallError as exc:
             self._write_json(502, {"error": str(exc), "kind": "memory"})
             return
@@ -74,15 +95,19 @@ class ChatUIHandler(SimpleHTTPRequestHandler):
         self._write_json(200, reply)
 
 
-def serve_chat_ui(host: str, port: int, *, env_file: Path | None = None) -> None:
+def serve_chat_ui(host: str, port: int, *, env_file: Path | None = None, skill_paths: list[Path] | None = None) -> None:
     load_env_file(env_file)
     root = web_root()
     if not (root / "index.html").exists():
         raise RuntimeError(f"chat UI assets not found: {root}")
-    handler = partial(ChatUIHandler, directory=str(root))
+    preloaded_skills = load_skill_assets(skill_paths)
+    handler_class = type("ConfiguredChatUIHandler", (ChatUIHandler,), {"preloaded_skills": preloaded_skills})
+    handler = partial(handler_class, directory=str(root))
     server = ThreadingHTTPServer((host, port), handler)
     actual_host, actual_port = server.server_address
     print(f"chat UI: http://{actual_host}:{actual_port}", flush=True)
+    if preloaded_skills:
+        print(f"loaded skills: {', '.join(item['file_name'] for item in preloaded_skills)}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

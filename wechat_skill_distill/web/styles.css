@@ -468,19 +468,30 @@ button:focus-visible {
   color: var(--amber);
 }
 
-.hit-list {
+.status-list {
   margin-top: 12px;
   display: grid;
   gap: 10px;
 }
 
-.hit {
-  border-left: 3px solid var(--green);
-  padding: 8px 10px;
-  background: #f5fbf4;
+.status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+  border: 1px solid #e3e9ee;
   border-radius: 6px;
-  color: var(--text);
-  overflow-wrap: anywhere;
+  background: #fbfcfd;
+}
+
+.status-row span {
+  color: var(--muted);
+}
+
+.status-row strong {
+  text-align: right;
+  font-weight: 650;
 }
 
 .empty {

@@ -17,10 +17,6 @@
           </div>
         </div>
         <div class="top-actions">
-          <button id="loadDemo" class="secondary" type="button" title="Load demo">
-            <span aria-hidden="true">▶</span>
-            体验
-          </button>
           <button id="clearChat" class="secondary" type="button" title="Clear chat">
             <span aria-hidden="true">⌫</span>
             清空
@@ -59,10 +55,6 @@
         <details class="panel settings-panel">
           <summary>后台设置</summary>
           <label class="file-pick">
-            <span>Skill 文件</span>
-            <input id="skillFiles" type="file" accept=".skill,.md,.txt" multiple />
-          </label>
-          <label class="file-pick">
             <span>记忆 JSONL</span>
             <input id="memoryFile" type="file" accept=".jsonl,.json,.txt" />
           </label>
@@ -81,7 +73,7 @@
       <main class="chat-shell">
         <div class="conversation-meta">
           <div>
-            <strong id="conversationTitle">加载 skill 后开始对话</strong>
+            <strong id="conversationTitle">正在读取陪伴对象</strong>
             <span id="conversationSub">模型会按 skill 风格生成回复</span>
             <span id="typingStatus" class="typing-status" hidden>对方正在输入中...</span>
           </div>
@@ -102,8 +94,8 @@
           <div id="styleTokens" class="tokens"></div>
         </section>
         <section class="panel grow">
-          <h2>记忆命中</h2>
-          <div id="memoryHits" class="hit-list"></div>
+          <h2>陪伴状态</h2>
+          <div id="companionStatus" class="status-list"></div>
         </section>
       </aside>
     </div>

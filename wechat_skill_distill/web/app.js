@@ -4,11 +4,11 @@ const state = {
   memoryRows: [],
   transcript: [],
   runtime: { default_provider: "openai", providers: [] },
+  lastRecall: null,
   busy: false
 };
 
 const els = {
-  skillFiles: document.getElementById("skillFiles"),
   memoryFile: document.getElementById("memoryFile"),
   providerSelect: document.getElementById("providerSelect"),
   modelInput: document.getElementById("modelInput"),
@@ -19,11 +19,10 @@ const els = {
   sampleCountValue: document.getElementById("sampleCountValue"),
   memoryCountValue: document.getElementById("memoryCountValue"),
   styleTokens: document.getElementById("styleTokens"),
-  memoryHits: document.getElementById("memoryHits"),
+  companionStatus: document.getElementById("companionStatus"),
   chatLog: document.getElementById("chatLog"),
   composer: document.getElementById("composer"),
   messageInput: document.getElementById("messageInput"),
-  loadDemo: document.getElementById("loadDemo"),
   clearChat: document.getElementById("clearChat"),
   exportChat: document.getElementById("exportChat"),
   appTitle: document.getElementById("appTitle"),
@@ -36,56 +35,14 @@ const els = {
   messageTemplate: document.getElementById("messageTemplate")
 };
 
-const demoSkill = `---
-name: chat-user-participant_b
-description: 模拟 userID=participant_b 的中文微信私聊回复；需要事实时结合记忆检索。
----
-
-# Participant B Chat Skill
-
-## 使用时机
-
-- 需要以 userID=participant_b 的身份进行中文微信私聊回复时使用。
-
-## 记忆检索
-
-本 skill 对应离线 JSONL 记忆产物。运行时如需事实，应由宿主 agent 先在 JSONL 或索引中检索相关记录，再把结果放入上下文。
-
-## 事实边界
-
-- 事实不是风格：样本只用于学习语气，不能据此推断新的个人事实。
-- 用户问题里的事实前提不自动成立；证据不足时自然表达不确定或追问。
-
-## 说话风格画像
-
-- 平均消息长度约 13.0 字；短消息占比约 100%。
-- 常见表达：可以、先把范围卡住、不然越写越散、明天再看也行、别硬撑。
-
-## 真实样本
-
-\`\`\`text
-可以，先把范围卡住，不然越写越散
-\`\`\`
-\`\`\`text
-明天再看也行，别硬撑
-\`\`\``;
-
-const demoMemory = [
-  {
-    content: "2026-04-18T21:31:40+08:00 userID=participant_b Participant B: 明天再看也行，别硬撑",
-    metadata: { userID: "participant_b", timestamp: "2026-04-18T21:31:40+08:00" },
-    tags: ["source:weflow", "chat:wechat", "user:participant_b"]
-  }
-];
-
-function parseSkill(text, fileName = "skill") {
+function parseSkill(text, fileName = "skill", stableId = "") {
   const titleMatch = text.match(/^#\s+(.+?)\s+(Chat\s+)?Skill\s*$/m);
   const userMatch = text.match(/userID=([^\s，。`]+)/);
   const commonLine = text.match(/常见表达：([^\n]+)/);
   const samples = [...text.matchAll(/```text\n([\s\S]*?)\n```/g)].map((match) => match[1].trim()).filter(Boolean);
   const phrases = commonLine ? commonLine[1].replace(/[。.;；]\s*$/, "").split(/[、,，]/).map((item) => item.trim()).filter(Boolean) : [];
   const name = titleMatch ? titleMatch[1].trim() : fileName.replace(/\.(chat-memory\.)?skill$/i, "");
-  const id = `${userMatch ? userMatch[1] : name}-${Math.random().toString(16).slice(2)}`;
+  const id = stableId || `${userMatch ? userMatch[1] : name}-${Math.random().toString(16).slice(2)}`;
   return {
     id,
     name,
@@ -157,7 +114,7 @@ function activePersona() {
   return state.personas.find((persona) => persona.id === state.activeId) || null;
 }
 
-function renderInspector(hits = []) {
+function renderInspector() {
   const persona = activePersona();
   els.modeValue.textContent = persona ? (persona.memoryAware ? "记忆陪伴" : "风格陪伴") : "未加载";
   els.userIdValue.textContent = persona ? persona.userId : "-";
@@ -170,7 +127,7 @@ function renderInspector(hits = []) {
   els.conversationTitle.textContent = persona ? persona.name : "加载 skill 后开始对话";
   els.conversationSub.textContent = persona
     ? `已学习 ${persona.samples.length} 条样本表达`
-    : "在后台设置加载 .skill 或 .chat-memory.skill 文件";
+    : "请在启动服务时通过 --skill 指定陪伴对象";
   els.typingStatus.hidden = true;
   els.styleTokens.innerHTML = "";
   if (!persona) {
@@ -182,7 +139,7 @@ function renderInspector(hits = []) {
       addToken(phrase);
     }
   }
-  renderHits(hits);
+  renderCompanionStatus();
   renderStatePills();
 }
 
@@ -210,21 +167,26 @@ function addToken(text, tone = "") {
   els.styleTokens.appendChild(token);
 }
 
-function renderHits(hits) {
-  els.memoryHits.innerHTML = "";
-  if (!hits.length) {
-    const empty = document.createElement("div");
-    empty.className = "empty";
-    empty.textContent = "暂无命中";
-    els.memoryHits.appendChild(empty);
-    return;
-  }
-  for (const hit of hits.slice(0, 6)) {
-    const item = document.createElement("div");
-    item.className = "hit";
-    item.textContent = hit.content || JSON.stringify(hit);
-    els.memoryHits.appendChild(item);
-  }
+function renderCompanionStatus() {
+  const persona = activePersona();
+  const cloudMemory = state.runtime.memory || {};
+  els.companionStatus.innerHTML = "";
+  addStatus("陪伴对象", persona ? persona.name : "未加载");
+  addStatus("风格来源", persona ? "服务端启动加载" : "等待服务端配置");
+  addStatus("云记忆", cloudMemory.configured ? "已接入" : "未接入");
+  addStatus("本地素材", state.memoryRows.length ? `${state.memoryRows.length} 条` : "未加载");
+  addStatus("本轮记忆", state.lastRecall ? "已参考相关上下文" : "等待对话");
+}
+
+function addStatus(label, value) {
+  const row = document.createElement("div");
+  row.className = "status-row";
+  const labelNode = document.createElement("span");
+  labelNode.textContent = label;
+  const valueNode = document.createElement("strong");
+  valueNode.textContent = value;
+  row.append(labelNode, valueNode);
+  els.companionStatus.appendChild(row);
 }
 
 function appendMessage(role, text, options = {}) {
@@ -265,18 +227,6 @@ async function readTextFile(file) {
   return file.text();
 }
 
-async function loadSkillFiles(files) {
-  const loaded = [];
-  for (const file of files) {
-    const text = await readTextFile(file);
-    loaded.push(parseSkill(text, file.name));
-  }
-  state.personas = loaded;
-  state.activeId = loaded[0] ? loaded[0].id : "";
-  renderPersonas();
-  appendMessage("system", `已加载 ${loaded.length} 个 skill 文件。`);
-}
-
 async function loadMemoryFile(file) {
   const text = await readTextFile(file);
   const rows = [];
@@ -299,16 +249,6 @@ async function loadMemoryFile(file) {
   }
 }
 
-function loadDemo() {
-  state.personas = [parseSkill(demoSkill, "Participant B.chat-memory.skill")];
-  state.activeId = state.personas[0].id;
-  state.memoryRows = demoMemory;
-  state.transcript = [];
-  els.chatLog.innerHTML = "";
-  renderPersonas();
-  appendMessage("system", "Demo 已加载，可以开始聊天。");
-}
-
 function exportTranscript() {
   const blob = new Blob([JSON.stringify(state.transcript, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -329,12 +269,12 @@ function recentHistory() {
 async function sendMessage(input) {
   const persona = activePersona();
   if (!persona) {
-    appendMessage("system", "请先加载并选择一个 skill。");
+    appendMessage("system", "服务未加载陪伴对象，请用 --skill 启动。");
     return;
   }
   const hits = searchMemory(input, persona);
   const history = recentHistory();
-  renderInspector(hits);
+  renderInspector();
   appendMessage("user", input);
   els.typingStatus.hidden = false;
   const pending = appendMessage("assistant", "对方正在输入中...", { record: false, pending: true });
@@ -359,9 +299,8 @@ async function sendMessage(input) {
       throw new Error(payload.error || `HTTP ${response.status}`);
     }
     const text = (payload.text || "").trim() || "我这边没生成出有效回复。";
-    if (Array.isArray(payload.memory_hits)) {
-      renderInspector(payload.memory_hits);
-    }
+    state.lastRecall = payload.memory && payload.memory.server_hits ? { serverHits: payload.memory.server_hits } : null;
+    renderInspector();
     updateMessage(pending, text);
     state.transcript.push({
       role: "assistant",
@@ -399,7 +338,26 @@ async function loadRuntime() {
   renderProviders();
 }
 
-els.skillFiles.addEventListener("change", (event) => loadSkillFiles(event.target.files));
+async function loadServerSkills() {
+  try {
+    const response = await fetch("./api/skills", { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    const skills = Array.isArray(payload.skills) ? payload.skills : [];
+    state.personas = skills.map((skill) => parseSkill(skill.text || "", skill.file_name || "skill", skill.id || ""));
+    state.activeId = state.personas[0] ? state.personas[0].id : "";
+    renderPersonas();
+    if (state.personas.length) {
+      appendMessage("system", `已连接 ${state.personas[0].name}。`);
+    } else {
+      appendMessage("system", "服务启动时未指定陪伴对象。请使用 --skill <file> 重新启动。");
+    }
+  } catch (error) {
+    renderPersonas();
+    appendMessage("system", `无法读取服务端 skill：${error.message}`);
+  }
+}
+
 els.memoryFile.addEventListener("change", (event) => {
   const file = event.target.files[0];
   if (file) loadMemoryFile(file);
@@ -431,9 +389,7 @@ els.clearChat.addEventListener("click", () => {
   appendMessage("system", "对话已清空。");
 });
 els.exportChat.addEventListener("click", exportTranscript);
-els.loadDemo.addEventListener("click", loadDemo);
 
 renderPersonas();
-renderHits([]);
-loadRuntime();
-appendMessage("system", "在后台设置加载 skill 后即可开始聊天。");
+loadRuntime().then(loadServerSkills);
+appendMessage("system", "正在连接陪伴对象。");

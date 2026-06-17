@@ -665,9 +665,12 @@ class ToolkitCoreTest(unittest.TestCase):
         prd = Path("PRD.md").read_text(encoding="utf-8")
 
         self.assertIn("服务端会按 metadata、participants 和 user:<id> tags 过滤明确属于其他 user 的命中", readme)
+        self.assertIn("metadata.userID 和 participants 可以是数组或逗号分隔字符串", readme)
+        self.assertIn("JSONL fallback 只使用通用 token 和中文 bigram 匹配", readme)
         self.assertIn("不基于记忆文本做业务关键词过滤", readme)
         self.assertIn("模型请求前必须过滤明确属于其他 userID 的 memory hits", prd)
         self.assertIn("过滤只基于 metadata、participants 和 user:<id> tags", prd)
+        self.assertIn("userID 和 participants 必须兼容数组和逗号分隔字符串", prd)
 
     def test_docs_keep_raw_skill_server_side(self) -> None:
         readme = Path("README.md").read_text(encoding="utf-8")
@@ -1011,6 +1014,49 @@ class ToolkitCoreTest(unittest.TestCase):
             ["客户端当前人的事实", "服务端当前人的事实", "服务端未标注事实"],
         )
         self.assertEqual(counts, {"server_hits": 2, "local_hits": 1})
+
+    def test_chat_server_keeps_shared_memory_hits_with_comma_scoped_user_ids(self) -> None:
+        payload = {
+            "message": "你们那天聊了什么",
+            "persona": {"name": "Participant A", "userId": "user-a"},
+        }
+        server_hits = [
+            {"content": "当天两人聊过周末安排", "metadata": {"userID": "user-a,user-b"}},
+            {"content": "当天两人聊过项目范围", "participants": "user-a,user-b"},
+            {"content": "其他人的共享记忆", "metadata": {"userID": "user-c,user-d"}},
+        ]
+
+        enriched, counts = build_enriched_chat_payload(payload, server_hits, env={})
+
+        self.assertEqual([hit["content"] for hit in enriched["memory_hits"]], ["当天两人聊过周末安排", "当天两人聊过项目范围"])
+        self.assertEqual(counts, {"server_hits": 2, "local_hits": 0})
+
+    def test_jsonl_recall_keeps_day_group_memory_with_comma_scoped_user_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            memory_path = Path(tmpdir) / "memory.jsonl"
+            memory_path.write_text(
+                json.dumps(
+                    {
+                        "content": "2026-04-18 userID=user-a Participant A: 周末可以去咖啡馆",
+                        "metadata": {"userID": "user-a,user-b", "timestamp": "2026-04-18T09:00:00+08:00"},
+                        "participants": ["user-a", "user-b"],
+                        "tags": ["user:user-a", "user:user-b"],
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            hits = recall_for_chat(
+                {
+                    "message": "周末咖啡馆",
+                    "persona": {"name": "Participant A", "userId": "user-a"},
+                },
+                env={"WSD_MEMORY_RECALL_BACKEND": "jsonl", "JSONL_MEMORY_PATH": str(memory_path)},
+            )
+
+        self.assertEqual([hit["content"] for hit in hits], ["2026-04-18 userID=user-a Participant A: 周末可以去咖啡馆"])
 
     def test_public_error_payload_hides_backend_details_by_default(self) -> None:
         provider_payload = public_error_payload(

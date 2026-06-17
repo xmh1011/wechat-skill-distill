@@ -3,6 +3,7 @@ from __future__ import annotations
 from functools import partial
 import json
 import os
+import re
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
@@ -89,12 +90,20 @@ def public_error_payload(kind: str, exc: Exception, *, env: Mapping[str, str] | 
 
 
 def _as_string_set(value: Any) -> set[str]:
+    def expand(text: str) -> set[str]:
+        result = {text} if text else set()
+        result.update(part.strip() for part in re.split(r"[,，]", text) if part.strip())
+        return result
+
     if value is None:
         return set()
     if isinstance(value, (list, tuple, set)):
-        return {str(item).strip() for item in value if str(item).strip()}
+        values: set[str] = set()
+        for item in value:
+            values.update(expand(str(item).strip()))
+        return values
     text = str(value).strip()
-    return {text} if text else set()
+    return expand(text)
 
 
 def _hit_matches_persona(hit: dict[str, Any], user_id: str) -> bool:

@@ -321,6 +321,62 @@ def _merge_recall_results(results: list[dict[str, Any]], new_items: list[dict[st
     return results
 
 
+def _scope_values(value: Any) -> set[str]:
+    def expand(text: str) -> set[str]:
+        result = {text} if text else set()
+        result.update(part.strip() for part in re.split(r"[,，]", text) if part.strip())
+        return result
+
+    if value is None:
+        return set()
+    if isinstance(value, (list, tuple, set)):
+        values: set[str] = set()
+        for item in value:
+            values.update(expand(str(item).strip()))
+        return values
+    return expand(str(value).strip())
+
+
+def _jsonl_row_matches_user(row: Mapping[str, Any], metadata: Mapping[str, Any], user_id: str) -> bool:
+    if not user_id:
+        return True
+    scoped_user_ids: set[str] = set()
+    for key in ("userID", "user_id", "userId"):
+        scoped_user_ids.update(_scope_values(metadata.get(key)))
+        scoped_user_ids.update(_scope_values(row.get(key)))
+    if scoped_user_ids and user_id not in scoped_user_ids:
+        return False
+    scoped_participants: set[str] = set()
+    scoped_participants.update(_scope_values(metadata.get("participants")))
+    scoped_participants.update(_scope_values(row.get("participants")))
+    if scoped_participants and user_id not in scoped_participants:
+        return False
+    raw_tags = []
+    for value in (row.get("tags"), metadata.get("tags")):
+        raw_tags.extend(_scope_values(value))
+    user_tags = {tag.removeprefix("user:") for tag in raw_tags if tag.startswith("user:")}
+    if user_tags and user_id not in user_tags:
+        return False
+    return True
+
+
+def _jsonl_search_keys(message: str) -> list[str]:
+    keys: list[str] = []
+    seen: set[str] = set()
+    for token in re.split(r"[^\w\u4e00-\u9fff]+", message):
+        token = token.strip()
+        if len(token) < 2:
+            continue
+        variants = [token]
+        if re.fullmatch(r"[\u4e00-\u9fff]{3,}", token):
+            variants.extend(token[index : index + 2] for index in range(len(token) - 1))
+        for variant in variants:
+            if variant and variant not in seen:
+                keys.append(variant)
+                seen.add(variant)
+    return keys
+
+
 def _generic_http_recall_for_chat(payload: Mapping[str, Any], env: Mapping[str, str]) -> list[dict[str, Any]]:
     _, persona_name, user_id, history, queries = _common_recall_inputs(payload, env)
     if not queries:
@@ -381,7 +437,7 @@ def _jsonl_recall_for_chat(payload: Mapping[str, Any], env: Mapping[str, str]) -
     if not path:
         return []
     limit = _result_limit(env, backend="jsonl")
-    keys = [key for key in re.split(r"[^\w\u4e00-\u9fff]+", message) if len(key) >= 2]
+    keys = _jsonl_search_keys(message)
     results: list[dict[str, Any]] = []
     try:
         lines = open(path, encoding="utf-8")
@@ -396,7 +452,8 @@ def _jsonl_recall_for_chat(payload: Mapping[str, Any], env: Mapping[str, str]) -
             if not isinstance(row, Mapping):
                 continue
             metadata = row.get("metadata") or {}
-            if user_id and isinstance(metadata, Mapping) and metadata.get("userID") and metadata.get("userID") != user_id:
+            metadata = metadata if isinstance(metadata, Mapping) else {}
+            if not _jsonl_row_matches_user(row, metadata, user_id):
                 continue
             content = str(row.get("content") or row.get("text") or "").strip()
             if not content:
@@ -404,7 +461,7 @@ def _jsonl_recall_for_chat(payload: Mapping[str, Any], env: Mapping[str, str]) -
             haystack = content + " " + json.dumps(metadata, ensure_ascii=False)
             if keys and not any(key in haystack for key in keys):
                 continue
-            results.append({"content": content, "metadata": metadata if isinstance(metadata, Mapping) else {}, "tags": row.get("tags") or [], "id": row.get("id"), "source": "jsonl"})
+            results.append({"content": content, "metadata": metadata, "tags": row.get("tags") or [], "id": row.get("id"), "source": "jsonl"})
             if len(results) >= limit:
                 break
     return results

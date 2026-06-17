@@ -126,15 +126,15 @@ function renderInspector() {
   document.title = title;
   els.conversationTitle.textContent = persona ? persona.name : "加载 skill 后开始对话";
   els.conversationSub.textContent = persona
-    ? `已配置 ${persona.samples.length} 组场景示例`
+    ? `已配置 ${persona.samples.length} 条风格样本`
     : "请在启动服务时通过 --skill 指定陪伴对象";
   els.typingStatus.hidden = true;
   els.styleTokens.innerHTML = "";
   if (!persona) {
-    addToken("No persona", "amber");
+    addToken("未加载对象", "amber");
   } else {
     addToken(persona.name, "teal");
-    addToken(persona.memoryAware ? "recall" : "style");
+    addToken(persona.memoryAware ? "记忆陪伴" : "风格陪伴");
     for (const phrase of persona.phrases.slice(0, 10)) {
       addToken(phrase);
     }

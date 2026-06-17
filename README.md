@@ -194,19 +194,51 @@ wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765 --env-file .env --skil
 
 Open the printed URL and chat with the preloaded persona. Pass `--skill` multiple times to preload multiple personas. The page calls the local `chat-ui` server, and the server calls the configured model provider. API keys stay in `.env` or environment variables and are never sent to the browser.
 
-If Hindsight recall is configured, `/api/chat` recalls relevant memories before calling the model and injects those hits with the selected skill. Raw memory hits are not returned to the browser; the UI only shows whether related context was referenced. The recall adapter stays generic; factual boundaries are enforced by the generated `.chat-memory.skill` and the server-side companion prompt.
+If a runtime memory backend is configured, `/api/chat` recalls relevant memories before calling the model and injects those hits with the selected skill. Raw memory hits are not returned to the browser; the UI only shows whether related context was referenced. The recall adapter stays generic; factual boundaries are enforced by the generated `.chat-memory.skill` and the server-side companion prompt.
+
+Recall backend selection defaults to `auto`: Hindsight is used when `HINDSIGHT_API_KEY` is present, otherwise Generic HTTP when `MEMORY_RECALL_URL` is present, otherwise Mem0 when `MEM0_API_KEY` is present, otherwise JSONL when `JSONL_MEMORY_PATH` is present. Set `WSD_MEMORY_RECALL_BACKEND=off` to disable server-side recall.
 
 ```bash
-WSD_MEMORY_RECALL_BACKEND=hindsight
+WSD_MEMORY_RECALL_BACKEND=auto
+WSD_MEMORY_RECALL_MODE=auto
+WSD_MEMORY_RESULT_LIMIT=24
+WSD_MEMORY_MAX_TOKENS=3200
+WSD_MEMORY_QUERY_VARIANTS=3
+```
+
+Hindsight recall:
+
+```bash
 HINDSIGHT_API_URL=https://cloud.memory.bj.baidubce.com/api
 HINDSIGHT_BANK_ID=your-chat-bank
 HINDSIGHT_API_KEY=...
 WSD_HINDSIGHT_TYPES=world,observation
-WSD_HINDSIGHT_MAX_TOKENS=1800
-WSD_HINDSIGHT_RECALL_MODE=auto
+WSD_HINDSIGHT_MAX_TOKENS=3200
 ```
 
-Recall runs in `auto` mode by default: lightweight greetings do not query memory, factual turns build a query from the current message, recent chat context, and the active persona. The server first tries strict `user:<id>` scoped recall, then falls back to the skill's conversation tags when the strict pass returns no facts.
+Generic HTTP recall:
+
+```bash
+MEMORY_RECALL_URL=https://memory.example.com/recall
+MEMORY_API_KEY=...
+```
+
+The Generic HTTP recall endpoint receives `query`, `queries`, `user_id`, `persona`, `history`, `tags`, `limit`, and `max_tokens`, and should return either a list or an object with `results`, `memories`, `data`, or `items`. Each item may use `text`, `content`, `memory`, or `value` for the memory text.
+
+Mem0 recall:
+
+```bash
+pip install -e '.[mem0]'
+MEM0_API_KEY=...
+```
+
+JSONL recall:
+
+```bash
+JSONL_MEMORY_PATH=exports/memory.jsonl
+```
+
+Recall runs in `auto` mode by default: lightweight greetings do not query memory, factual turns build a query from the current message, recent user questions, and the active persona. Hindsight-specific recall first tries strict `user:<id>` scoped recall, then falls back to the skill's conversation tags when the strict pass returns no facts. Other backends receive the same user/persona/query contract and keep their own ranking order.
 
 Supported model protocols:
 

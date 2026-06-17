@@ -14,6 +14,8 @@ DEFAULT_BANK_ID = "default-bank"
 DEFAULT_RESULT_LIMIT = 24
 DEFAULT_CHUNK_TOKENS = 2400
 DEFAULT_SOURCE_FACT_TOKENS = 2400
+DISABLED_BACKENDS = {"", "off", "none", "disabled", "false", "0"}
+AUTO_BACKENDS = {"", "auto", "default"}
 SMALL_TALK_MESSAGES = {
     "你好",
     "您好",
@@ -55,15 +57,25 @@ def _compact_message(value: str) -> str:
 
 def memory_runtime_status(env: Mapping[str, str] | None = None) -> dict[str, Any]:
     current_env = env or os.environ
-    backend = _env(current_env, "WSD_MEMORY_RECALL_BACKEND", "MEMORY_RECALL_BACKEND", default="")
-    api_key = _env(current_env, "WSD_HINDSIGHT_API_KEY", "HINDSIGHT_API_KEY")
-    api_url = _env(current_env, "WSD_HINDSIGHT_API_URL", "HINDSIGHT_API_URL", default="https://cloud.memory.bj.baidubce.com/api")
+    backend = _memory_backend(current_env)
+    hindsight_key = _env(current_env, "WSD_HINDSIGHT_API_KEY", "HINDSIGHT_API_KEY")
+    hindsight_url = _env(current_env, "WSD_HINDSIGHT_API_URL", "HINDSIGHT_API_URL", default="https://cloud.memory.bj.baidubce.com/api")
     bank_id = _env(current_env, "WSD_HINDSIGHT_BANK_ID", "HINDSIGHT_BANK_ID", default=DEFAULT_BANK_ID)
-    if not backend:
-        backend = "hindsight" if api_key else "off"
+    generic_url = _env(current_env, "WSD_MEMORY_RECALL_URL", "MEMORY_RECALL_URL")
+    mem0_key = _env(current_env, "WSD_MEM0_API_KEY", "MEM0_API_KEY")
+    jsonl_path = _env(current_env, "WSD_JSONL_MEMORY_PATH", "JSONL_MEMORY_PATH")
+    configured = False
+    if backend == "hindsight":
+        configured = bool(hindsight_key and hindsight_url and bank_id)
+    elif backend == "generic-http":
+        configured = bool(generic_url)
+    elif backend == "mem0":
+        configured = bool(mem0_key or _env(current_env, "MEM0_ORG_ID", "MEM0_PROJECT_ID") or backend)
+    elif backend == "jsonl":
+        configured = bool(jsonl_path)
     return {
         "backend": backend,
-        "configured": backend == "hindsight" and bool(api_key and api_url and bank_id),
+        "configured": configured,
         "bank_id": bank_id if backend == "hindsight" else "",
     }
 
@@ -71,13 +83,36 @@ def memory_runtime_status(env: Mapping[str, str] | None = None) -> dict[str, Any
 def recall_for_chat(payload: Mapping[str, Any], env: Mapping[str, str] | None = None) -> list[dict[str, Any]]:
     current_env = env or os.environ
     status = memory_runtime_status(current_env)
-    if status["backend"] in {"", "off", "none", "disabled"}:
+    if status["backend"] in DISABLED_BACKENDS:
         return []
-    if status["backend"] != "hindsight":
-        raise MemoryRecallError(f"unsupported memory recall backend: {status['backend']}")
     if not status["configured"]:
         return []
-    return _hindsight_recall_for_chat(payload, current_env)
+    if status["backend"] == "hindsight":
+        return _hindsight_recall_for_chat(payload, current_env)
+    if status["backend"] == "generic-http":
+        return _generic_http_recall_for_chat(payload, current_env)
+    if status["backend"] == "mem0":
+        return _mem0_recall_for_chat(payload, current_env)
+    if status["backend"] == "jsonl":
+        return _jsonl_recall_for_chat(payload, current_env)
+    raise MemoryRecallError(f"unsupported memory recall backend: {status['backend']}")
+
+
+def _memory_backend(env: Mapping[str, str]) -> str:
+    requested = _env(env, "WSD_MEMORY_RECALL_BACKEND", "MEMORY_RECALL_BACKEND", default="").strip().lower()
+    if requested and requested in DISABLED_BACKENDS:
+        return "off"
+    if requested and requested not in AUTO_BACKENDS:
+        return requested
+    if _env(env, "WSD_HINDSIGHT_API_KEY", "HINDSIGHT_API_KEY"):
+        return "hindsight"
+    if _env(env, "WSD_MEMORY_RECALL_URL", "MEMORY_RECALL_URL"):
+        return "generic-http"
+    if _env(env, "WSD_MEM0_API_KEY", "MEM0_API_KEY"):
+        return "mem0"
+    if _env(env, "WSD_JSONL_MEMORY_PATH", "JSONL_MEMORY_PATH"):
+        return "jsonl"
+    return "off"
 
 
 def _hindsight_recall_for_chat(payload: Mapping[str, Any], env: Mapping[str, str]) -> list[dict[str, Any]]:
@@ -109,7 +144,7 @@ def _hindsight_recall_for_chat(payload: Mapping[str, Any], env: Mapping[str, str
 
 
 def _should_recall(message: str, env: Mapping[str, str]) -> bool:
-    mode = _env(env, "WSD_HINDSIGHT_RECALL_MODE", "HINDSIGHT_RECALL_MODE", default="auto").lower()
+    mode = _env(env, "WSD_MEMORY_RECALL_MODE", "MEMORY_RECALL_MODE", "WSD_HINDSIGHT_RECALL_MODE", "HINDSIGHT_RECALL_MODE", default="auto").lower()
     if mode in {"off", "none", "disabled"}:
         return False
     if mode in {"always", "all"}:
@@ -189,7 +224,7 @@ def _recall_queries(message: str, persona_name: str, user_id: str, history: str,
         except Exception:
             planned = []
         queries.extend(planned)
-    max_variants = int(_env(env, "WSD_HINDSIGHT_QUERY_VARIANTS", "HINDSIGHT_QUERY_VARIANTS", default="3"))
+    max_variants = int(_env(env, "WSD_MEMORY_QUERY_VARIANTS", "MEMORY_QUERY_VARIANTS", "WSD_HINDSIGHT_QUERY_VARIANTS", "HINDSIGHT_QUERY_VARIANTS", default="3"))
     deduped = []
     seen = set()
     for query in queries:
@@ -205,6 +240,8 @@ def _recall_queries(message: str, persona_name: str, user_id: str, history: str,
 def _base_recall_query(message: str, persona_name: str, user_id: str, history: str, env: Mapping[str, str]) -> str:
     query_template = _env(
         env,
+        "WSD_MEMORY_QUERY_TEMPLATE",
+        "MEMORY_QUERY_TEMPLATE",
         "WSD_HINDSIGHT_QUERY_TEMPLATE",
         "HINDSIGHT_QUERY_TEMPLATE",
         default=(
@@ -241,6 +278,174 @@ def _recall_payload(query: str, tags: list[str], tags_match: str, env: Mapping[s
     if query_timestamp:
         body["query_timestamp"] = query_timestamp
     return body
+
+
+def _common_recall_inputs(payload: Mapping[str, Any], env: Mapping[str, str]) -> tuple[str, str, str, str, list[str]]:
+    message = str(payload.get("message") or "").strip()
+    if not message or not _should_recall(message, env):
+        return "", "", "", "", []
+    persona = payload.get("persona") or {}
+    persona_name = str(persona.get("name") or "当前人物")
+    user_id = str(persona.get("userId") or "").strip()
+    history = _recent_user_context(payload)
+    queries = _recall_queries(message, persona_name, user_id, history, payload, env)
+    return message, persona_name, user_id, history, queries
+
+
+def _result_limit(env: Mapping[str, str], *, backend: str) -> int:
+    return int(
+        _env(
+            env,
+            "WSD_MEMORY_RESULT_LIMIT",
+            "MEMORY_RESULT_LIMIT",
+            f"WSD_{backend.upper().replace('-', '_')}_RESULT_LIMIT",
+            f"{backend.upper().replace('-', '_')}_RESULT_LIMIT",
+            default=str(DEFAULT_RESULT_LIMIT),
+        )
+    )
+
+
+def _merge_recall_results(results: list[dict[str, Any]], new_items: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+    seen = {item.get("id") or item.get("content") for item in results}
+    for item in new_items:
+        key = item.get("id") or item.get("content")
+        if key in seen:
+            continue
+        results.append(item)
+        seen.add(key)
+        if len(results) >= limit:
+            break
+    return results
+
+
+def _generic_http_recall_for_chat(payload: Mapping[str, Any], env: Mapping[str, str]) -> list[dict[str, Any]]:
+    _, persona_name, user_id, history, queries = _common_recall_inputs(payload, env)
+    if not queries:
+        return []
+    url = _env(env, "WSD_MEMORY_RECALL_URL", "MEMORY_RECALL_URL")
+    api_key = _env(env, "WSD_MEMORY_API_KEY", "MEMORY_API_KEY")
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    limit = _result_limit(env, backend="generic-http")
+    tags = _csv(_env(env, "WSD_MEMORY_TAGS", "MEMORY_TAGS")) or ([f"user:{user_id}"] if user_id else [])
+    results: list[dict[str, Any]] = []
+    for query in queries:
+        body = {
+            "query": query,
+            "queries": queries,
+            "user_id": user_id,
+            "persona": {"name": persona_name, "userId": user_id},
+            "history": history,
+            "tags": tags,
+            "limit": limit,
+            "max_tokens": int(_env(env, "WSD_MEMORY_MAX_TOKENS", "MEMORY_MAX_TOKENS", default="3200")),
+        }
+        response = requests.post(url, headers=headers, json=body, timeout=60)
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise MemoryRecallError(f"generic HTTP recall returned non-JSON response: HTTP {response.status_code}") from exc
+        if response.status_code >= 400:
+            raise MemoryRecallError(f"generic HTTP recall HTTP {response.status_code}: {str(data)[:800]}")
+        results = _merge_recall_results(results, _normalize_recall_results(data, source="generic-http", limit=limit), limit)
+        if len(results) >= limit:
+            break
+    return results
+
+
+def _mem0_recall_for_chat(payload: Mapping[str, Any], env: Mapping[str, str]) -> list[dict[str, Any]]:
+    _, _, user_id, _, queries = _common_recall_inputs(payload, env)
+    if not queries:
+        return []
+    try:
+        from mem0 import MemoryClient  # type: ignore
+    except ImportError as exc:
+        raise MemoryRecallError("Mem0 recall requires `pip install mem0ai` or a compatible mem0 package") from exc
+    api_key = _env(env, "WSD_MEM0_API_KEY", "MEM0_API_KEY")
+    client = MemoryClient(api_key=api_key) if api_key else MemoryClient()
+    limit = _result_limit(env, backend="mem0")
+    results: list[dict[str, Any]] = []
+    for query in queries:
+        raw = client.search(query, user_id=user_id or None, limit=limit)
+        results = _merge_recall_results(results, _normalize_recall_results(raw, source="mem0", limit=limit), limit)
+        if len(results) >= limit:
+            break
+    return results
+
+
+def _jsonl_recall_for_chat(payload: Mapping[str, Any], env: Mapping[str, str]) -> list[dict[str, Any]]:
+    message, _, user_id, _, _ = _common_recall_inputs(payload, env)
+    if not message:
+        return []
+    path = _env(env, "WSD_JSONL_MEMORY_PATH", "JSONL_MEMORY_PATH")
+    if not path:
+        return []
+    limit = _result_limit(env, backend="jsonl")
+    keys = [key for key in re.split(r"[^\w\u4e00-\u9fff]+", message) if len(key) >= 2]
+    results: list[dict[str, Any]] = []
+    try:
+        lines = open(path, encoding="utf-8")
+    except OSError as exc:
+        raise MemoryRecallError(f"JSONL memory file cannot be opened: {path}") from exc
+    with lines:
+        for line in lines:
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(row, Mapping):
+                continue
+            metadata = row.get("metadata") or {}
+            if user_id and isinstance(metadata, Mapping) and metadata.get("userID") and metadata.get("userID") != user_id:
+                continue
+            content = str(row.get("content") or row.get("text") or "").strip()
+            if not content:
+                continue
+            haystack = content + " " + json.dumps(metadata, ensure_ascii=False)
+            if keys and not any(key in haystack for key in keys):
+                continue
+            results.append({"content": content, "metadata": metadata if isinstance(metadata, Mapping) else {}, "tags": row.get("tags") or [], "id": row.get("id"), "source": "jsonl"})
+            if len(results) >= limit:
+                break
+    return results
+
+
+def _normalize_recall_results(data: Any, *, source: str, limit: int) -> list[dict[str, Any]]:
+    raw_results: Any
+    if isinstance(data, Mapping):
+        raw_results = data.get("results") or data.get("memories") or data.get("data") or data.get("items")
+    else:
+        raw_results = data
+    if not isinstance(raw_results, list):
+        return []
+    results: list[dict[str, Any]] = []
+    for item in raw_results[:limit]:
+        if isinstance(item, str):
+            text = item.strip()
+            metadata: dict[str, Any] = {}
+            tags: list[Any] = []
+            item_id = None
+            score = None
+        elif isinstance(item, Mapping):
+            text = str(item.get("text") or item.get("content") or item.get("memory") or item.get("value") or "").strip()
+            raw_metadata = item.get("metadata") or item.get("meta") or {}
+            metadata = dict(raw_metadata) if isinstance(raw_metadata, Mapping) else {}
+            tags = item.get("tags") or metadata.get("tags") or []
+            item_id = item.get("id") or item.get("memory_id") or item.get("uuid")
+            score = item.get("score")
+            timestamp = metadata.get("timestamp") or item.get("timestamp") or item.get("created_at")
+            if timestamp:
+                metadata.setdefault("timestamp", timestamp)
+        else:
+            continue
+        if not text:
+            continue
+        result = {"content": text, "metadata": metadata, "tags": tags, "id": item_id, "source": source}
+        if score is not None:
+            result["score"] = score
+        results.append(result)
+    return results
 
 
 def _run_recall_queries(
@@ -291,7 +496,7 @@ def _post_hindsight_recall(api_url: str, api_key: str, bank_id: str, body: dict[
     source_facts = data.get("source_facts") if isinstance(data, Mapping) else None
     if not isinstance(source_facts, Mapping):
         source_facts = {}
-    result_limit = int(_env(env, "WSD_HINDSIGHT_RESULT_LIMIT", "HINDSIGHT_RESULT_LIMIT", default=str(DEFAULT_RESULT_LIMIT)))
+    result_limit = _result_limit(env, backend="hindsight")
     results = []
     for item in raw_results[:result_limit]:
         if not isinstance(item, Mapping):

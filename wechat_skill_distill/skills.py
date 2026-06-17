@@ -30,19 +30,23 @@ MEMORY_BACKEND_TEXT = {
 
 - Key：`MEM0_API_KEY`
 - user_id：当前 skill 对应的 userID
-- metadata：应包含 `source=wechat`、`conversation_id`
+- client：建议使用 `MemoryClient.search` / `client.search`
+- query：包含目标人物、userID、当前用户原话和最近用户追问；保持短而聚焦。
+- limit：按宿主上下文预算设置，普通事实建议 12-24 条。
+- metadata：建议包含 `source`、`conversation_id`、`timestamp`、`userID`
 
-如果检索不到相关事实，不要编造细节。""",
+如果检索不到相关事实，不要编造细节；不要在 skill 或代码里维护固定领域词表。""",
     "generic-http": """## 记忆检索
 
 当回复需要具体事实、偏好、经历、时间线或关系上下文时，调用通用 HTTP recall endpoint。
 
 - URL：`MEMORY_RECALL_URL`
 - Key：`MEMORY_API_KEY`
-- 请求字段建议：`query`、`user_id`、`tags`、`max_tokens`
-- 响应字段建议：`results[].text`
+- 请求字段建议：`query`、`queries`、`user_id`、`persona`、`history`、`tags`、`limit`、`max_tokens`
+- query：包含目标人物、userID、当前用户原话和最近用户追问；保持短而聚焦。
+- 响应字段建议：`results[].text` / `results[].content` / `results[].memory`
 
-如果接口不可用或无结果，不要编造细节。""",
+如果接口不可用或无结果，不要编造细节；不要在 skill 或代码里维护固定领域词表。""",
     "jsonl": """## 记忆检索
 
 本 skill 对应离线 JSONL 记忆产物。运行时如需事实，应由宿主 agent 先在 JSONL 或索引中检索相关记录，再把结果放入上下文。

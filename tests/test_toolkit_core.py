@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
+import sys
 import tempfile
+from types import ModuleType
 import unittest
 from unittest.mock import patch
 
@@ -120,6 +122,28 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("适用：", skills["user-a"])
         self.assertIn("边界：", skills["user-a"])
         self.assertTrue(any(path.name == "Participant A.chat-memory.skill" for path in written))
+
+    def test_memory_chat_skill_templates_describe_backend_neutral_recall_contracts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "chat.json"
+            path.write_text(json.dumps(self.sample_export(), ensure_ascii=False), encoding="utf-8")
+            messages = load_weflow_messages(
+                path,
+                participants={
+                    "0": {"user_id": "user-a", "name": "Participant A"},
+                    "1": {"user_id": "user-b", "name": "Participant B"},
+                },
+            )
+
+            mem0_skill = generate_skill_texts(messages, include_memory=True, memory_backend="mem0")["user-a"]
+            generic_skill = generate_skill_texts(messages, include_memory=True, memory_backend="generic-http")["user-a"]
+
+        self.assertIn("client.search", mem0_skill)
+        self.assertIn("user_id：当前 skill 对应的 userID", mem0_skill)
+        self.assertIn("query：包含目标人物、userID、当前用户原话和最近用户追问", mem0_skill)
+        self.assertIn("MEMORY_RECALL_URL", generic_skill)
+        self.assertIn("请求字段建议：`query`、`queries`、`user_id`、`persona`、`history`、`tags`、`limit`、`max_tokens`", generic_skill)
+        self.assertIn("不要在 skill 或代码里维护固定领域词表", generic_skill)
 
     def test_memory_items_write_jsonl_with_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -400,6 +424,107 @@ class ToolkitCoreTest(unittest.TestCase):
 
         self.assertEqual(hits, [])
         post.assert_not_called()
+
+    def test_generic_http_recall_backend_uses_common_runtime_contract(self) -> None:
+        with patch("wechat_skill_distill.memory_recall.requests.post") as post:
+            post.return_value = MockResponse(
+                {
+                    "results": [
+                        {
+                            "id": "g1",
+                            "text": "Participant A提到自己更喜欢晚饭后散步",
+                            "metadata": {"userID": "user-a", "timestamp": "2026-04-19T20:00:00+08:00"},
+                            "score": 0.8,
+                        }
+                    ]
+                }
+            )
+
+            hits = recall_for_chat(
+                {
+                    "message": "你晚上一般喜欢干嘛",
+                    "skill": "# Participant A Chat Skill",
+                    "persona": {"name": "Participant A", "userId": "user-a"},
+                    "history": [{"role": "user", "text": "之前聊过散步吗"}],
+                },
+                env={
+                    "WSD_MEMORY_RECALL_BACKEND": "generic-http",
+                    "MEMORY_RECALL_URL": "https://memory.example.test/recall",
+                    "MEMORY_API_KEY": "secret",
+                    "WSD_MEMORY_RESULT_LIMIT": "9",
+                },
+            )
+
+        self.assertEqual(hits[0]["content"], "Participant A提到自己更喜欢晚饭后散步")
+        self.assertEqual(hits[0]["source"], "generic-http")
+        args, kwargs = post.call_args
+        self.assertEqual(args[0], "https://memory.example.test/recall")
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer secret")
+        self.assertEqual(kwargs["json"]["user_id"], "user-a")
+        self.assertEqual(kwargs["json"]["persona"]["name"], "Participant A")
+        self.assertEqual(kwargs["json"]["limit"], 9)
+        self.assertIn("当前用户原话：你晚上一般喜欢干嘛", kwargs["json"]["query"])
+        self.assertIn("之前聊过散步吗", kwargs["json"]["history"])
+
+    def test_mem0_recall_backend_uses_client_search_when_configured(self) -> None:
+        class FakeMemoryClient:
+            last_init = {}
+            last_search = {}
+
+            def __init__(self, api_key=None):
+                FakeMemoryClient.last_init = {"api_key": api_key}
+
+            def search(self, query, **kwargs):
+                FakeMemoryClient.last_search = {"query": query, **kwargs}
+                return {
+                    "results": [
+                        {
+                            "id": "m1",
+                            "memory": "Participant A说自己喜欢安静一点的咖啡馆",
+                            "metadata": {"userID": "user-a"},
+                        }
+                    ]
+                }
+
+        fake_mem0 = ModuleType("mem0")
+        fake_mem0.MemoryClient = FakeMemoryClient
+        original_mem0 = sys.modules.get("mem0")
+        sys.modules["mem0"] = fake_mem0
+        try:
+            hits = recall_for_chat(
+                {
+                    "message": "你喜欢什么样的咖啡馆",
+                    "skill": "# Participant A Chat Skill",
+                    "persona": {"name": "Participant A", "userId": "user-a"},
+                },
+                env={
+                    "WSD_MEMORY_RECALL_BACKEND": "mem0",
+                    "MEM0_API_KEY": "secret",
+                    "WSD_MEMORY_RESULT_LIMIT": "7",
+                },
+            )
+        finally:
+            if original_mem0 is None:
+                sys.modules.pop("mem0", None)
+            else:
+                sys.modules["mem0"] = original_mem0
+
+        self.assertEqual(hits[0]["content"], "Participant A说自己喜欢安静一点的咖啡馆")
+        self.assertEqual(hits[0]["source"], "mem0")
+        self.assertEqual(FakeMemoryClient.last_init, {"api_key": "secret"})
+        self.assertEqual(FakeMemoryClient.last_search["user_id"], "user-a")
+        self.assertEqual(FakeMemoryClient.last_search["limit"], 7)
+        self.assertIn("你喜欢什么样的咖啡馆", FakeMemoryClient.last_search["query"])
+
+    def test_frontend_copy_and_defaults_are_persona_neutral(self) -> None:
+        root = web_root()
+        source = (root / "index.html").read_text(encoding="utf-8") + "\n" + (root / "app.js").read_text(encoding="utf-8")
+
+        for private_name in ["肖明浩", "胡翔川", "牧之", "661", "662", "Skill Companion Lab"]:
+            self.assertNotIn(private_name, source)
+        self.assertIn("persona.name", source)
+        self.assertIn("已配置 ${persona.samples.length} 条风格样本", source)
+        self.assertNotIn("组场景示例", source)
 
     def test_openai_compatible_chat_call_uses_server_side_protocol(self) -> None:
         with patch("wechat_skill_distill.model_client.requests.post") as post:

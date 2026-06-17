@@ -42,7 +42,6 @@ def _skill_summary(asset: Mapping[str, str]) -> dict[str, Any]:
     meta = parse_skill_meta(text, fallback_name=fallback_name)
     return {
         "id": str(asset.get("id") or ""),
-        "file_name": file_name,
         "name": meta.name,
         "userId": meta.user_id or "-",
         "memoryAware": meta.memory_aware,

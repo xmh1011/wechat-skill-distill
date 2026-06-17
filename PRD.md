@@ -268,6 +268,7 @@ wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765 --env-file .env
 - 使用 package 内置静态资源，不要求 Node.js 或前端构建链。
 - 前端不提供 skill 文件选择入口；persona 来自服务端启动参数。
 - 完整 skill 文本只保存在本地服务端；浏览器不得接收或回传 raw skill 文本。
+- 浏览器不得接收本地 skill 文件名，展示名必须来自服务端解析后的 persona metadata。
 - `/api/skills` 只返回 persona 摘要和 `skill_id`，`/api/chat` 根据 `skill_id` 在服务端解析并注入完整 skill。
 - 服务端 public persona 摘要和 evaluate-skills 必须复用同一套 skill metadata parser，避免 UI 展示名、userID 和评估报告不一致；metadata parser 只读取文件开头 frontmatter block。
 - 多 persona UI 必须按 skill_id 隔离 transcript 和 recall 状态，切换对象时不得把上一位对象的 history 传给下一位。

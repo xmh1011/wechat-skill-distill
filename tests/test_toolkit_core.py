@@ -300,7 +300,9 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertEqual(public[0]["sampleCount"], 1)
         self.assertEqual(public[0]["phrases"], ["可以", "哈哈"])
         self.assertNotIn("text", public[0])
+        self.assertNotIn("file_name", public[0])
         self.assertNotIn("raw", json.dumps(public, ensure_ascii=False))
+        self.assertNotIn("A.chat-memory.skill", json.dumps(public, ensure_ascii=False))
         self.assertNotIn("这是不应发送到浏览器的完整样本", json.dumps(public, ensure_ascii=False))
 
     def test_skill_metadata_parser_is_consistent_across_public_api_and_evaluator(self) -> None:
@@ -632,9 +634,11 @@ class ToolkitCoreTest(unittest.TestCase):
         prd = Path("PRD.md").read_text(encoding="utf-8")
 
         self.assertIn("浏览器只接收 persona 摘要和 skill_id，不接收完整 skill 文本", readme)
+        self.assertIn("也不接收本地 skill 文件名", readme)
         self.assertIn("聊天请求只提交 skill_id", readme)
         self.assertIn("完整 skill 文本只保存在本地服务端", prd)
         self.assertIn("浏览器不得接收或回传 raw skill 文本", prd)
+        self.assertIn("浏览器不得接收本地 skill 文件名", prd)
 
     def test_docs_require_shared_skill_metadata_parser(self) -> None:
         readme = Path("README.md").read_text(encoding="utf-8")
@@ -797,6 +801,7 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertNotIn("persona.raw", source)
         self.assertNotIn("parseSkill", source)
         self.assertNotIn("frontmatterValue", source)
+        self.assertNotIn("skill.file_name", source)
         self.assertNotIn("组场景示例", source)
         self.assertNotIn("后台模型未配置", source)
 

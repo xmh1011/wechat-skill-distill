@@ -34,7 +34,7 @@ const els = {
 };
 
 function normalizePersona(skill) {
-  const name = String(skill.name || skill.file_name || "未命名对象").trim();
+  const name = String(skill.name || "未命名对象").trim();
   const userId = String(skill.userId || "-").trim() || "-";
   const id = String(skill.id || `${userId}-${Math.random().toString(16).slice(2)}`);
   return {

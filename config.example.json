@@ -1,0 +1,17 @@
+{
+  "participants": {
+    "0": {
+      "user_id": "participant_a",
+      "name": "Participant A"
+    },
+    "1": {
+      "user_id": "participant_b",
+      "name": "Participant B"
+    }
+  },
+  "hindsight_api_url": "https://your-hindsight-endpoint.example.com/api",
+  "hindsight_bank_id": "default-bank",
+  "mem0_api_key": "",
+  "generic_http_url": "",
+  "jsonl_output": "exports/memory.jsonl"
+}

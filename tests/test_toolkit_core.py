@@ -1,0 +1,105 @@
+import json
+from pathlib import Path
+import tempfile
+import unittest
+
+from wechat_skill_distill.memory import build_memory_items, write_jsonl
+from wechat_skill_distill.skills import generate_skill_texts
+from wechat_skill_distill.weflow import load_weflow_messages
+
+
+class ToolkitCoreTest(unittest.TestCase):
+    def sample_export(self) -> dict:
+        return {
+            "messages": [
+                {
+                    "localId": 1,
+                    "formattedTime": "2026-04-18 01:51:44",
+                    "type": "文本消息",
+                    "content": "哈哈哈哈今天又被拉去改材料了",
+                    "isSend": 0,
+                    "senderUsername": "wxid_a",
+                    "senderDisplayName": "Participant A",
+                },
+                {
+                    "localId": 2,
+                    "formattedTime": "2026-04-18 01:52:01",
+                    "type": "文本消息",
+                    "content": "确实，这种需求反复改很折磨",
+                    "isSend": 1,
+                    "senderUsername": "wxid_b",
+                    "senderDisplayName": "Participant B",
+                },
+                {
+                    "localId": 3,
+                    "formattedTime": "2026-04-18 01:53:01",
+                    "type": "系统消息",
+                    "content": "系统消息不应导入",
+                    "isSend": 0,
+                },
+            ]
+        }
+
+    def test_load_weflow_messages_maps_participants(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "chat.json"
+            path.write_text(json.dumps(self.sample_export(), ensure_ascii=False), encoding="utf-8")
+
+            messages = load_weflow_messages(
+                path,
+                participants={
+                    "0": {"user_id": "user-a", "name": "Participant A"},
+                    "1": {"user_id": "user-b", "name": "Participant B"},
+                },
+            )
+
+        self.assertEqual([m.user_id for m in messages], ["user-a", "user-b"])
+        self.assertEqual(messages[0].sender_name, "Participant A")
+        self.assertEqual(messages[1].sender_name, "Participant B")
+        self.assertEqual(len(messages), 2)
+
+    def test_generate_skill_texts_are_independent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "chat.json"
+            path.write_text(json.dumps(self.sample_export(), ensure_ascii=False), encoding="utf-8")
+            messages = load_weflow_messages(
+                path,
+                participants={
+                    "0": {"user_id": "user-a", "name": "Participant A"},
+                    "1": {"user_id": "user-b", "name": "Participant B"},
+                },
+            )
+
+        skills = generate_skill_texts(messages, memory_backend="hindsight")
+
+        self.assertIn("Participant A Chat Skill", skills["user-a"])
+        self.assertIn("Participant B Chat Skill", skills["user-b"])
+        self.assertNotIn("Participant B Chat Skill", skills["user-a"])
+        self.assertNotIn("Participant A Chat Skill", skills["user-b"])
+        self.assertIn("HINDSIGHT_API_KEY", skills["user-a"])
+
+    def test_memory_items_write_jsonl_with_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "chat.json"
+            out = Path(tmp) / "memory.jsonl"
+            path.write_text(json.dumps(self.sample_export(), ensure_ascii=False), encoding="utf-8")
+            messages = load_weflow_messages(
+                path,
+                participants={
+                    "0": {"user_id": "user-a", "name": "Participant A"},
+                    "1": {"user_id": "user-b", "name": "Participant B"},
+                },
+            )
+            items = build_memory_items(messages, group_by="message")
+
+            write_jsonl(items, out)
+            rows = [json.loads(line) for line in out.read_text(encoding="utf-8").splitlines()]
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["metadata"]["userID"], "user-a")
+        self.assertEqual(rows[1]["metadata"]["userID"], "user-b")
+        self.assertIn("timestamp", rows[0]["metadata"])
+
+
+if __name__ == "__main__":
+    unittest.main()

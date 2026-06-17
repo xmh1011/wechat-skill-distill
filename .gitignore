@@ -1,8 +1,15 @@
 .env
 .venv/
+.idea/
 __pycache__/
 *.pyc
+*.egg-info/
 logs/
+logs*/
 payloads/
+runs/
+exports/
+generated-skills/
+generated-chat-skills/
+data/
 .DS_Store
-

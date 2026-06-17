@@ -1,0 +1,49 @@
+{
+  "messages": [
+    {
+      "localId": 1,
+      "formattedTime": "2026-04-18 09:10:00",
+      "type": "文本消息",
+      "content": "早，我刚看完那个方案，感觉目标还得再收一下",
+      "isSend": 0,
+      "senderUsername": "wxid_participant_a",
+      "senderDisplayName": "Participant A"
+    },
+    {
+      "localId": 2,
+      "formattedTime": "2026-04-18 09:11:12",
+      "type": "文本消息",
+      "content": "可以，先把范围卡住，不然越写越散",
+      "isSend": 1,
+      "senderUsername": "wxid_participant_b",
+      "senderDisplayName": "Participant B"
+    },
+    {
+      "localId": 3,
+      "formattedTime": "2026-04-18 21:30:05",
+      "type": "文本消息",
+      "content": "今晚你还改吗，我有点想明天再看",
+      "isSend": 0,
+      "senderUsername": "wxid_participant_a",
+      "senderDisplayName": "Participant A"
+    },
+    {
+      "localId": 4,
+      "formattedTime": "2026-04-18 21:31:40",
+      "type": "引用消息",
+      "content": "明天再看也行，别硬撑 [引用 早，我刚看完那个方案]",
+      "isSend": 1,
+      "senderUsername": "wxid_participant_b",
+      "senderDisplayName": "Participant B"
+    },
+    {
+      "localId": 5,
+      "formattedTime": "2026-04-19 10:00:00",
+      "type": "系统消息",
+      "content": "这条系统消息不会被导入",
+      "isSend": 0,
+      "senderUsername": "system",
+      "senderDisplayName": "System"
+    }
+  ]
+}

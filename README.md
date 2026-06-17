@@ -67,6 +67,17 @@ wechat-skill-distill doctor --input examples/chat.json --config config.local.jso
 
 `inspect` shows raw/importable/skipped message counts, date range, participants, message type distribution, and skip reasons. Use `--json` for automation or `--output reports/inspect.json` to save the report.
 
+## Redact Sensitive Values
+
+```bash
+wechat-skill-distill redact \
+  --input examples/chat.json \
+  --output data/chat.redacted.json \
+  --report reports/redaction.json
+```
+
+Default rules mask common phone numbers, emails, URLs, mainland China ID card numbers, and bank-card-like numbers. Provide `--policy config/redaction.json` to use custom regex rules.
+
 ## Generate Style Skills
 
 ```bash
@@ -206,6 +217,7 @@ The evaluator checks required sections, style-only vs memory-aware file type rul
 ```bash
 python3 -m unittest discover -s tests
 wechat-skill-distill inspect --input examples/chat.json --config config.local.json
+wechat-skill-distill redact --input examples/chat.json --output data/chat.redacted.json --report reports/redaction.json
 wechat-skill-distill doctor --input examples/chat.json --config config.local.json
 wechat-skill-distill extract-skills --input examples/chat.json --out-dir generated-skills --config config.local.json
 wechat-skill-distill generate-chat-skills --input examples/chat.json --out-dir generated-chat-skills --memory-backend jsonl --config config.local.json

@@ -6,6 +6,7 @@ import unittest
 from wechat_skill_distill.evaluation import collect_skill_paths, evaluate_skills
 from wechat_skill_distill.inspection import inspect_weflow_export
 from wechat_skill_distill.memory import build_memory_items, write_jsonl
+from wechat_skill_distill.redaction import redact_weflow_export
 from wechat_skill_distill.skills import generate_skill_texts, write_skill_files
 from wechat_skill_distill.weflow import load_weflow_messages
 from wechat_skill_distill.web_server import web_root
@@ -191,6 +192,23 @@ class ToolkitCoreTest(unittest.TestCase):
             paths = collect_skill_paths(root)
 
         self.assertEqual([path.name for path in paths], ["A.skill", "B.chat-memory.skill"])
+
+    def test_redact_weflow_export_masks_common_sensitive_values(self) -> None:
+        data = self.sample_export()
+        data["messages"][0]["content"] = "电话 13800138000，邮箱 alice@example.com，链接 https://x.test?a=secret"
+        data["messages"][1]["content"] = "身份证 11010519491231002X，卡号 6222020202020202020"
+        redacted, report = redact_weflow_export(data)
+
+        contents = "\n".join(message["content"] for message in redacted["messages"])
+
+        self.assertIn("[PHONE]", contents)
+        self.assertIn("[EMAIL]", contents)
+        self.assertIn("[URL]", contents)
+        self.assertIn("[ID_CARD]", contents)
+        self.assertIn("[BANK_CARD]", contents)
+        self.assertNotIn("13800138000", contents)
+        self.assertEqual(report["summary"]["messages_changed"], 2)
+        self.assertEqual(report["summary"]["total_replacements"], 5)
 
 
 if __name__ == "__main__":

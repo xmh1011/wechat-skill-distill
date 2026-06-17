@@ -15,6 +15,7 @@ from .memory import (
     Mem0Backend,
     build_memory_items,
 )
+from .redaction import redact_weflow_file
 from .skills import generate_skill_texts, write_skill_files
 from .weflow import load_weflow_messages
 from .web_server import serve_chat_ui
@@ -209,6 +210,20 @@ def cmd_evaluate_skills(args: argparse.Namespace) -> int:
     return 1 if args.fail_on_issue and report["summary"]["failed"] else 0
 
 
+def cmd_redact(args: argparse.Namespace) -> int:
+    report = redact_weflow_file(args.input, args.output, report_path=args.report, policy=args.policy)
+    print(f"redacted: {args.output}")
+    if args.report:
+        print(f"report: {args.report}")
+    summary = report["summary"]
+    print(
+        f"messages_scanned={summary['messages_scanned']} "
+        f"messages_changed={summary['messages_changed']} "
+        f"total_replacements={summary['total_replacements']}"
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="wechat-skill-distill")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -280,6 +295,13 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument("--output", type=Path)
     evaluate.add_argument("--fail-on-issue", action="store_true")
     evaluate.set_defaults(func=cmd_evaluate_skills)
+
+    redact = sub.add_parser("redact", help="redact sensitive values from a WeFlow JSON")
+    redact.add_argument("--input", required=True, type=Path)
+    redact.add_argument("--output", required=True, type=Path)
+    redact.add_argument("--report", type=Path)
+    redact.add_argument("--policy", type=Path)
+    redact.set_defaults(func=cmd_redact)
     return parser
 
 

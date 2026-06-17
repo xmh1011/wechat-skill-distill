@@ -102,6 +102,7 @@ generated-chat-skills/Participant B.chat-memory.skill
 用户希望知道生成结果是否可信：
 
 - `inspect` 在导入前输出消息总数、可导入数、跳过原因、日期范围、参与者和消息类型分布。
+- `redact` 在导入云记忆或生成产物前脱敏手机号、邮箱、URL、身份证、银行卡等敏感值，并输出报告。
 - `doctor` 检查输入文件、参与者映射、环境变量和输出目录。
 - `evaluate-skills` 检查必需章节、文件类型规则、对方身份混入、样本文本泄漏和 userID 标记。
 - 后续版本增强隐私风险和记忆字段完整性评估。
@@ -234,7 +235,8 @@ wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765
 - `.env`、raw exports、logs、runs、exports、generated output 默认不提交。
 - 生成 skill 不包含 API key。
 - 不在产品中嵌入特定用户姓名、ID、私人文件路径或云服务 key。
-- 后续版本提供 redaction 规则：手机号、地址、身份证、银行卡、邮箱、URL token。
+- `redact` 默认提供手机号、邮箱、URL、身份证、银行卡脱敏规则。
+- `redact --policy` 支持用户自定义正则规则和 replacement。
 
 ### FR9 可测试性
 
@@ -269,12 +271,22 @@ wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765
 - 输出文本报告、`--json` 结构化报告，或 `--output` 保存 JSON。
 - 支持 `--fail-on-issue` 作为 CI/自动化质量门禁。
 
+### FR13 Redaction
+
+- 命令：`redact`。
+- 输入 WeFlow JSON，输出脱敏后的 JSON。
+- 支持 `--report` 保存 redaction report。
+- 默认规则覆盖邮箱、手机号、URL、身份证、银行卡样式数字串。
+- 支持 `--policy` 加载自定义规则：`rules[].name`、`rules[].pattern`、`rules[].replacement`。
+- 报告包含 messages_scanned、messages_changed、total_replacements、replacements_by_rule、changed_messages。
+
 ## 7. CLI 设计
 
 ```bash
 wechat-skill-distill doctor --input chat.json --config config.local.json
 wechat-skill-distill weflow-guide
 wechat-skill-distill inspect --input chat.json --config config.local.json
+wechat-skill-distill redact --input chat.json --output chat.redacted.json --report reports/redaction.json
 wechat-skill-distill extract-skills --input chat.json --out-dir generated-skills --config config.local.json
 wechat-skill-distill import --backend jsonl --input chat.json --output exports/memory.jsonl --dry-run --config config.local.json
 wechat-skill-distill generate-chat-skills --input chat.json --out-dir generated-chat-skills --memory-backend jsonl --config config.local.json
@@ -298,6 +310,7 @@ wechat-skill-distill init --wizard
 - `python3 -m unittest discover -s tests` 通过。
 - `wechat-skill-distill inspect --input examples/chat.json --config config.example.json` 能输出消息数、日期范围、参与者、消息类型和跳过原因。
 - `wechat-skill-distill inspect --input examples/chat.json --config config.example.json --json` 输出合法 JSON。
+- `wechat-skill-distill redact --input <json> --output <redacted-json> --report <report-json>` 能输出脱敏 JSON 和报告。
 - `wechat-skill-distill doctor --input examples/chat.json --config config.example.json` 能检查输入。
 - `wechat-skill-distill extract-skills --input examples/chat.json --out-dir /tmp/wsd/generated-skills --config config.example.json` 生成两个 `.skill`。
 - 生成的 `.skill` 不包含 `## 记忆检索`、`HINDSIGHT_API_KEY`、`MEM0_API_KEY`。
@@ -312,7 +325,6 @@ wechat-skill-distill init --wizard
 
 ### 下一阶段目标
 
-- 增加 redaction policy。
 - 增加 parser/backend 注册机制。
 - 增加更丰富的风格画像 JSON。
 
@@ -323,12 +335,11 @@ wechat-skill-distill init --wizard
 - WeFlow parser。
 - 无记忆 skill 与有记忆 chat-memory skill 分离。
 - JSONL、generic HTTP、Hindsight、Mem0 adapter。
-- README、config、inspect、doctor、chat UI、evaluate-skills、单元测试。
+- README、config、inspect、doctor、chat UI、evaluate-skills、redact、单元测试。
 
 ### M2 产品可用性增强
 
 - 初始化向导。
-- redact。
 - profile.json 输出。
 - 更明确的错误恢复建议。
 

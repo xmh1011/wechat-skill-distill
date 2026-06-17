@@ -26,9 +26,12 @@ const els = {
   loadDemo: document.getElementById("loadDemo"),
   clearChat: document.getElementById("clearChat"),
   exportChat: document.getElementById("exportChat"),
+  appTitle: document.getElementById("appTitle"),
+  brandMark: document.querySelector(".brand-mark"),
   runtimeStatus: document.getElementById("runtimeStatus"),
   conversationTitle: document.getElementById("conversationTitle"),
   conversationSub: document.getElementById("conversationSub"),
+  typingStatus: document.getElementById("typingStatus"),
   statePills: document.getElementById("statePills"),
   messageTemplate: document.getElementById("messageTemplate")
 };
@@ -47,6 +50,11 @@ description: 模拟 userID=participant_b 的中文微信私聊回复；需要事
 ## 记忆检索
 
 本 skill 对应离线 JSONL 记忆产物。运行时如需事实，应由宿主 agent 先在 JSONL 或索引中检索相关记录，再把结果放入上下文。
+
+## 事实边界
+
+- 事实不是风格：样本只用于学习语气，不能据此推断新的个人事实。
+- 用户问题里的事实前提不自动成立；证据不足时自然表达不确定或追问。
 
 ## 说话风格画像
 
@@ -122,8 +130,8 @@ function renderRuntimeStatus() {
   const model = els.modelInput.value.trim() || (provider && provider.model) || "";
   const ready = Boolean(provider && provider.configured && model);
   els.runtimeStatus.textContent = ready
-    ? `${provider.provider} · ${model} · server-side key`
-    : "模型服务未完整配置";
+    ? "陪伴服务已连接"
+    : "后台模型未配置";
   els.modelHint.textContent = ready
     ? "请求会从本地服务端转发，浏览器不保存 API key。"
     : "请在 .env 中配置对应 provider 的 API key 和 model。";
@@ -151,14 +159,19 @@ function activePersona() {
 
 function renderInspector(hits = []) {
   const persona = activePersona();
-  els.modeValue.textContent = persona ? (persona.memoryAware ? "Memory-aware" : "Style-only") : "No skill";
+  els.modeValue.textContent = persona ? (persona.memoryAware ? "记忆陪伴" : "风格陪伴") : "未加载";
   els.userIdValue.textContent = persona ? persona.userId : "-";
   els.sampleCountValue.textContent = persona ? String(persona.samples.length) : "0";
-  els.memoryCountValue.textContent = `${state.memoryRows.length} rows`;
-  els.conversationTitle.textContent = persona ? `正在模拟 ${persona.name}` : "加载 skill 后开始对话";
+  els.memoryCountValue.textContent = `${state.memoryRows.length} 条`;
+  const title = persona ? persona.name : "智能陪伴";
+  els.appTitle.textContent = title;
+  els.brandMark.textContent = persona ? title.trim().slice(0, 1).toUpperCase() : "S";
+  document.title = title;
+  els.conversationTitle.textContent = persona ? persona.name : "加载 skill 后开始对话";
   els.conversationSub.textContent = persona
-    ? "模型会结合 skill、上下文和命中的记忆生成回复"
-    : "先加载一个 .skill 或 .chat-memory.skill 文件";
+    ? `已学习 ${persona.samples.length} 条样本表达`
+    : "在后台设置加载 .skill 或 .chat-memory.skill 文件";
+  els.typingStatus.hidden = true;
   els.styleTokens.innerHTML = "";
   if (!persona) {
     addToken("No persona", "amber");
@@ -176,10 +189,11 @@ function renderInspector(hits = []) {
 function renderStatePills() {
   const persona = activePersona();
   const provider = providerByName(els.providerSelect.value);
+  const cloudMemory = state.runtime.memory || {};
   els.statePills.innerHTML = "";
-  addPill(persona ? "Skill ready" : "No skill", persona ? "ok" : "warn");
-  addPill(`${state.memoryRows.length} memories`, state.memoryRows.length ? "ok" : "");
-  addPill(provider && provider.configured ? provider.provider : "No model", provider && provider.configured ? "ok" : "warn");
+  addPill(persona ? "风格已加载" : "未加载风格", persona ? "ok" : "warn");
+  addPill(cloudMemory.configured ? "云记忆已连接" : `${state.memoryRows.length} 条本地记忆`, cloudMemory.configured || state.memoryRows.length ? "ok" : "");
+  addPill(provider && provider.configured ? "服务已连接" : "服务未配置", provider && provider.configured ? "ok" : "warn");
 }
 
 function addPill(text, tone = "") {
@@ -292,7 +306,7 @@ function loadDemo() {
   state.transcript = [];
   els.chatLog.innerHTML = "";
   renderPersonas();
-  appendMessage("system", "Demo 已加载。请配置模型后输入消息。");
+  appendMessage("system", "Demo 已加载，可以开始聊天。");
 }
 
 function exportTranscript() {
@@ -322,7 +336,8 @@ async function sendMessage(input) {
   const history = recentHistory();
   renderInspector(hits);
   appendMessage("user", input);
-  const pending = appendMessage("assistant", "正在结合 skill、记忆和上下文生成回复...", { record: false, pending: true });
+  els.typingStatus.hidden = false;
+  const pending = appendMessage("assistant", "对方正在输入中...", { record: false, pending: true });
   state.busy = true;
   setComposerEnabled(false);
   try {
@@ -344,6 +359,9 @@ async function sendMessage(input) {
       throw new Error(payload.error || `HTTP ${response.status}`);
     }
     const text = (payload.text || "").trim() || "我这边没生成出有效回复。";
+    if (Array.isArray(payload.memory_hits)) {
+      renderInspector(payload.memory_hits);
+    }
     updateMessage(pending, text);
     state.transcript.push({
       role: "assistant",
@@ -353,11 +371,12 @@ async function sendMessage(input) {
       model: payload.model
     });
   } catch (error) {
-    updateMessage(pending, `模型调用失败：${error.message}`);
+    updateMessage(pending, `回复失败：${error.message}`);
     pending.classList.remove("assistant");
     pending.classList.add("system");
   } finally {
     state.busy = false;
+    els.typingStatus.hidden = true;
     setComposerEnabled(true);
     els.messageInput.focus();
   }
@@ -417,4 +436,4 @@ els.loadDemo.addEventListener("click", loadDemo);
 renderPersonas();
 renderHits([]);
 loadRuntime();
-appendMessage("system", "加载 skill 后即可开始模型对话。");
+appendMessage("system", "在后台设置加载 skill 后即可开始聊天。");

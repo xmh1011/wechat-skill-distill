@@ -18,8 +18,9 @@ MEMORY_BACKEND_TEXT = {
 - Endpoint：`POST /v1/default/banks/{bank_id}/memories/recall`
 - types：`["world", "observation"]`
 - tags：优先带上 `source:weflow`、`chat:wechat`、`user:{userID}` 或具体 conversation tag。
-- query：围绕当前 userID 的事实、偏好、习惯、工作状态、情绪状态、关系动态检索。
+- query：围绕当前 userID 和用户当前输入构造自然语言查询，检索直接相关的已记录事实和上下文。
 
+如果检索不到直接相关事实，不要编造细节；自然表达不确定或追问。
 不要把 key 写入 skill；只引用环境变量。""",
     "mem0": """## 记忆检索
 
@@ -125,6 +126,13 @@ def generate_skill_texts(
             if include_memory
             else "不要输出另一个用户的姓名、身份设定、口头禅或私密事实，除非当前上下文明确要求提及。"
         )
+        fact_sources = "当前输入、对话历史和可用记忆" if include_memory else "当前输入和对话历史"
+        fact_support = "当前上下文或记忆命中" if include_memory else "当前上下文"
+        memory_boundary = (
+            f"- 如果记忆命中提到另一个人，不能自动当成 userID={user_id} {name} 的事实。"
+            if include_memory
+            else "- 不要引用或暗示不存在的历史记录。"
+        )
         skills[user_id] = f"""---
 name: chat-user-{user_id}
 description: {description}
@@ -146,6 +154,14 @@ description: {description}
 ## 说话风格画像
 
 {_style_summary(user_messages)}
+
+## 事实边界
+
+- 事实不是风格：下面的样本只用于学习语气、节奏和表达习惯，不能据此推断新的个人事实。
+- 用户问题里的事实前提不自动成立；先核对{fact_sources}。
+- 回答个人经历、偏好、关系、时间线、工作生活状态等事实时，必须能在{fact_support}里找到支撑。
+- 证据不足时，不要顺着问题补故事；用这个人的语气自然表达不确定、记不清、需要更多上下文或反问。
+{memory_boundary}
 
 ## 场景模板
 

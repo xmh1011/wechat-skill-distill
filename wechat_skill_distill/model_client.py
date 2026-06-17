@@ -136,7 +136,10 @@ def build_companion_prompt(payload: Mapping[str, Any]) -> str:
 - 严格根据下方 skill 模仿说话风格、语气、节奏、常用表达和边界。
 - 默认只输出一条自然聊天回复，不加说话人标签，不解释你正在使用 skill。
 - 使用中文微信私聊语气，像真实聊天，不要写成报告、总结、客服话术或长篇建议。
-- 需要事实时优先使用“记忆命中”；记忆没有覆盖时，不要编造具体人物、关系、经历、工作、地点或暧昧对象。
+- 事实不是风格：skill 样本只用于学习语气，不能据此推断新的个人事实。
+- 需要事实时优先使用“记忆命中”；只使用与当前人物和当前问题直接相关的命中。
+- 用户问题里的事实前提不自动成立。只有当前输入、对话历史、skill 明示配置或记忆命中能支撑时，才可以顺着该前提回答。
+- 如果记忆命中为空，或命中内容不能支撑当前问题，必须自然表达不确定、记不清或追问，不要编造或写故事补空白。
 - 如果信息不足，可以自然地追问或降低确定性。
 - 可以温和陪伴，但不要越界承诺、诊断或替用户做重大决定。
 
@@ -181,7 +184,7 @@ def _temperature(env: Mapping[str, str]) -> float | None:
         raise ModelConfigError("MODEL_TEMPERATURE must be a number") from exc
 
 
-def _max_tokens(env: Mapping[str, str], default: int = 420) -> int:
+def _max_tokens(env: Mapping[str, str], default: int = 800) -> int:
     value = _env(env, "WSD_MODEL_MAX_TOKENS", "MODEL_MAX_TOKENS")
     if not value:
         return default

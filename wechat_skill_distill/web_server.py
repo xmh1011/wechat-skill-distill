@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from .memory_recall import MemoryRecallError, memory_runtime_status, recall_for_chat
 from .model_client import ModelCallError, ModelConfigError, generate_chat_reply, load_env_file, runtime_status
 
 
@@ -28,7 +29,7 @@ class ChatUIHandler(SimpleHTTPRequestHandler):
     def do_GET(self) -> None:
         path = urlparse(self.path).path
         if path == "/api/runtime":
-            self._write_json(200, runtime_status())
+            self._write_json(200, {**runtime_status(), "memory": memory_runtime_status()})
             return
         super().do_GET()
 
@@ -49,8 +50,21 @@ class ChatUIHandler(SimpleHTTPRequestHandler):
         except (UnicodeDecodeError, json.JSONDecodeError):
             self._write_json(400, {"error": "request body must be valid JSON"})
             return
+        if not isinstance(payload, dict):
+            self._write_json(400, {"error": "request body must be a JSON object"})
+            return
         try:
-            reply = generate_chat_reply(payload)
+            server_hits = recall_for_chat(payload)
+            existing_hits = payload.get("memory_hits") if isinstance(payload, dict) else []
+            if not isinstance(existing_hits, list):
+                existing_hits = []
+            enriched_payload = {**payload, "memory_hits": [*existing_hits, *server_hits]}
+            reply = generate_chat_reply(enriched_payload)
+            reply["memory_hits"] = enriched_payload["memory_hits"]
+            reply["memory"] = {"server_hits": len(server_hits)}
+        except MemoryRecallError as exc:
+            self._write_json(502, {"error": str(exc), "kind": "memory"})
+            return
         except ModelConfigError as exc:
             self._write_json(400, {"error": str(exc), "kind": "config"})
             return

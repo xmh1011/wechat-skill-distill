@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Skill Companion Lab</title>
+    <title>智能陪伴</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -12,29 +12,52 @@
         <div class="brand">
           <span class="brand-mark" aria-hidden="true">S</span>
           <div>
-            <h1>Skill Companion Lab</h1>
-            <p id="runtimeStatus">正在检查模型服务</p>
+            <h1 id="appTitle">智能陪伴</h1>
+            <p id="runtimeStatus">正在连接陪伴服务</p>
           </div>
         </div>
         <div class="top-actions">
           <button id="loadDemo" class="secondary" type="button" title="Load demo">
             <span aria-hidden="true">▶</span>
-            Demo
+            体验
           </button>
           <button id="clearChat" class="secondary" type="button" title="Clear chat">
             <span aria-hidden="true">⌫</span>
-            Clear
+            清空
           </button>
           <button id="exportChat" class="primary" type="button" title="Export transcript">
             <span aria-hidden="true">⇩</span>
-            Export
+            导出
           </button>
         </div>
       </header>
 
       <aside class="sidebar">
         <section class="panel">
-          <h2>资产</h2>
+          <h2>对话对象</h2>
+          <select id="personaSelect" aria-label="Persona"></select>
+          <dl class="facts">
+            <div>
+              <dt>陪伴类型</dt>
+              <dd id="modeValue">No skill</dd>
+            </div>
+            <div>
+              <dt>角色 ID</dt>
+              <dd id="userIdValue">-</dd>
+            </div>
+            <div>
+              <dt>样本</dt>
+              <dd id="sampleCountValue">0</dd>
+            </div>
+            <div>
+              <dt>记忆</dt>
+              <dd id="memoryCountValue">0 rows</dd>
+            </div>
+          </dl>
+        </section>
+
+        <details class="panel settings-panel">
+          <summary>后台设置</summary>
           <label class="file-pick">
             <span>Skill 文件</span>
             <input id="skillFiles" type="file" accept=".skill,.md,.txt" multiple />
@@ -43,10 +66,6 @@
             <span>记忆 JSONL</span>
             <input id="memoryFile" type="file" accept=".jsonl,.json,.txt" />
           </label>
-        </section>
-
-        <section class="panel">
-          <h2>模型协议</h2>
           <label class="field">
             <span>Provider</span>
             <select id="providerSelect" aria-label="Provider"></select>
@@ -56,30 +75,7 @@
             <input id="modelInput" type="text" autocomplete="off" placeholder="由服务端环境变量决定" />
           </label>
           <p id="modelHint" class="hint">API key 只在本地服务端读取。</p>
-        </section>
-
-        <section class="panel">
-          <h2>Persona</h2>
-          <select id="personaSelect" aria-label="Persona"></select>
-          <dl class="facts">
-            <div>
-              <dt>Mode</dt>
-              <dd id="modeValue">No skill</dd>
-            </div>
-            <div>
-              <dt>User ID</dt>
-              <dd id="userIdValue">-</dd>
-            </div>
-            <div>
-              <dt>Samples</dt>
-              <dd id="sampleCountValue">0</dd>
-            </div>
-            <div>
-              <dt>Memory</dt>
-              <dd id="memoryCountValue">0 rows</dd>
-            </div>
-          </dl>
-        </section>
+        </details>
       </aside>
 
       <main class="chat-shell">
@@ -87,6 +83,7 @@
           <div>
             <strong id="conversationTitle">加载 skill 后开始对话</strong>
             <span id="conversationSub">模型会按 skill 风格生成回复</span>
+            <span id="typingStatus" class="typing-status" hidden>对方正在输入中...</span>
           </div>
           <div id="statePills" class="state-pills"></div>
         </div>

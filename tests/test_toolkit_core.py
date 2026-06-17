@@ -7,6 +7,7 @@ from unittest.mock import patch
 from wechat_skill_distill.evaluation import collect_skill_paths, evaluate_skills
 from wechat_skill_distill.inspection import inspect_weflow_export
 from wechat_skill_distill.memory import build_memory_items, write_jsonl
+from wechat_skill_distill.memory_recall import memory_runtime_status, recall_for_chat
 from wechat_skill_distill.model_client import build_companion_prompt, generate_chat_reply, runtime_status
 from wechat_skill_distill.redaction import redact_weflow_export
 from wechat_skill_distill.skills import generate_skill_texts, write_skill_files
@@ -113,6 +114,8 @@ class ToolkitCoreTest(unittest.TestCase):
 
         self.assertIn("Participant A Chat Skill", skills["user-a"])
         self.assertIn("HINDSIGHT_API_KEY", skills["user-a"])
+        self.assertIn("## 事实边界", skills["user-a"])
+        self.assertIn("用户问题里的事实前提不自动成立", skills["user-a"])
         self.assertTrue(any(path.name == "Participant A.chat-memory.skill" for path in written))
 
     def test_memory_items_write_jsonl_with_metadata(self) -> None:
@@ -247,6 +250,50 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("常见表达", prompt)
         self.assertIn("记得周末约过咖啡", prompt)
         self.assertIn("不要编造", prompt)
+        self.assertIn("事实不是风格", prompt)
+        self.assertIn("用户问题里的事实前提不自动成立", prompt)
+
+    def test_hindsight_recall_uses_skill_defaults_and_tag_fallback(self) -> None:
+        skill = """
+        # Participant A Chat Skill
+        - Bank：`memory-bank-test`
+        - `tags`：`["conversation:chat-a-b"]`
+        """
+        with patch("wechat_skill_distill.memory_recall.requests.post") as post:
+            post.side_effect = [
+                MockResponse({"results": []}),
+                MockResponse(
+                    {
+                        "results": [
+                            {"id": "m0", "text": "Participant B提到过一次旅行安排", "type": "world", "metadata": {"userID": "user-b"}},
+                            {"id": "m1", "text": "Participant A提到周末可能有空", "type": "world", "metadata": {"userID": "user-a"}},
+                        ]
+                    }
+                ),
+            ]
+
+            hits = recall_for_chat(
+                {
+                    "message": "讲讲你之前提过的那件事",
+                    "skill": skill,
+                    "persona": {"name": "Participant A", "userId": "user-a"},
+                },
+                env={
+                    "HINDSIGHT_API_URL": "https://memory.example.test/api",
+                    "HINDSIGHT_API_KEY": "secret",
+                    "HINDSIGHT_BANK_ID": "memory-bank-test",
+                },
+            )
+
+        self.assertEqual([hit["content"] for hit in hits], ["Participant B提到过一次旅行安排", "Participant A提到周末可能有空"])
+        self.assertTrue(memory_runtime_status({"HINDSIGHT_API_KEY": "secret"})["configured"])
+        first_body = post.call_args_list[0].kwargs["json"]
+        second_body = post.call_args_list[1].kwargs["json"]
+        self.assertEqual(post.call_args_list[0].args[0], "https://memory.example.test/api/v1/default/banks/memory-bank-test/memories/recall")
+        self.assertIn("conversation:chat-a-b", first_body["tags"])
+        self.assertIn("user:user-a", first_body["tags"])
+        self.assertEqual(first_body["tags_match"], "any_strict")
+        self.assertNotIn("tags", second_body)
 
     def test_openai_compatible_chat_call_uses_server_side_protocol(self) -> None:
         with patch("wechat_skill_distill.model_client.requests.post") as post:
@@ -275,6 +322,32 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertEqual(kwargs["headers"]["Authorization"], "Bearer secret")
         self.assertEqual(kwargs["json"]["model"], "deepseek-v4-flash")
         self.assertEqual(kwargs["json"]["messages"][-1]["content"], "周末要不要出去？")
+
+    def test_openai_prompt_carries_grounding_contract_without_keyword_guard(self) -> None:
+        with patch("wechat_skill_distill.model_client.requests.post") as post:
+            post.return_value = MockResponse({"choices": [{"message": {"content": "这个我不太确定"}}]})
+
+            reply = generate_chat_reply(
+                {
+                    "provider": "openai",
+                    "message": "讲讲你之前提过的那件事",
+                    "skill": "## 说话风格画像\n- 常见表达：这个我不太确定。",
+                    "persona": {"name": "Participant A", "userId": "user-a"},
+                    "memory_hits": [{"content": "Participant B提到过一次旅行安排", "metadata": {"userID": "user-b"}}],
+                },
+                env={
+                    "WSD_OPENAI_API_KEY": "secret",
+                    "WSD_OPENAI_MODEL": "deepseek-v4-flash",
+                    "WSD_OPENAI_BASE_URL": "https://oneapi.example.test/v1",
+                },
+            )
+
+        system_prompt = post.call_args.kwargs["json"]["messages"][0]["content"]
+        self.assertEqual(reply["text"], "这个我不太确定")
+        self.assertNotIn("guarded", reply)
+        self.assertIn("事实不是风格", system_prompt)
+        self.assertIn("只使用与当前人物和当前问题直接相关的命中", system_prompt)
+        self.assertIn("用户问题里的事实前提不自动成立", system_prompt)
 
     def test_anthropic_chat_call_uses_messages_protocol(self) -> None:
         with patch("wechat_skill_distill.model_client.requests.post") as post:

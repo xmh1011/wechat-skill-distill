@@ -75,6 +75,19 @@ def _truthy(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def public_error_payload(kind: str, exc: Exception, *, env: Mapping[str, str] | None = None) -> dict[str, Any]:
+    messages = {
+        "config": "服务端配置不完整，请检查本地环境变量。",
+        "memory": "记忆服务调用失败，请检查服务端记忆配置或稍后重试。",
+        "provider": "模型服务调用失败，请检查服务端模型配置或稍后重试。",
+    }
+    payload: dict[str, Any] = {"error": messages.get(kind, "请求处理失败。"), "kind": kind}
+    current_env = env or os.environ
+    if _truthy(str(current_env.get("WSD_DEBUG_ERRORS") or current_env.get("DEBUG_ERRORS") or "")):
+        payload["detail"] = str(exc)
+    return payload
+
+
 def _as_string_set(value: Any) -> set[str]:
     if value is None:
         return set()
@@ -177,13 +190,13 @@ class ChatUIHandler(SimpleHTTPRequestHandler):
             reply = generate_chat_reply(enriched_payload)
             reply["memory"] = memory_counts
         except MemoryRecallError as exc:
-            self._write_json(502, {"error": str(exc), "kind": "memory"})
+            self._write_json(502, public_error_payload("memory", exc))
             return
         except ModelConfigError as exc:
-            self._write_json(400, {"error": str(exc), "kind": "config"})
+            self._write_json(400, public_error_payload("config", exc))
             return
         except ModelCallError as exc:
-            self._write_json(502, {"error": str(exc), "kind": "provider"})
+            self._write_json(502, public_error_payload("provider", exc))
             return
         self._write_json(200, reply)
 

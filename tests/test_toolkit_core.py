@@ -10,12 +10,12 @@ from unittest.mock import patch
 from wechat_skill_distill.evaluation import collect_skill_paths, evaluate_skills
 from wechat_skill_distill.inspection import inspect_weflow_export
 from wechat_skill_distill.memory import build_memory_items, write_jsonl
-from wechat_skill_distill.memory_recall import memory_runtime_status, recall_for_chat
-from wechat_skill_distill.model_client import build_companion_prompt, build_recall_query_planner_prompt, generate_chat_reply, generate_recall_query_variants, runtime_status
+from wechat_skill_distill.memory_recall import MemoryRecallError, memory_runtime_status, recall_for_chat
+from wechat_skill_distill.model_client import ModelCallError, build_companion_prompt, build_recall_query_planner_prompt, generate_chat_reply, generate_recall_query_variants, runtime_status
 from wechat_skill_distill.redaction import redact_weflow_export
 from wechat_skill_distill.skills import generate_skill_texts, write_skill_files
 from wechat_skill_distill.weflow import load_weflow_messages
-from wechat_skill_distill.web_server import build_enriched_chat_payload, load_skill_assets, public_skill_assets, resolve_preloaded_skill_payload, web_root
+from wechat_skill_distill.web_server import build_enriched_chat_payload, load_skill_assets, public_error_payload, public_skill_assets, resolve_preloaded_skill_payload, web_root
 
 
 class MockResponse:
@@ -647,7 +647,10 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("浏览器不得接收模型 base URL", prd)
         self.assertIn("浏览器不提交模型覆盖字段", readme)
         self.assertIn("默认不得接受浏览器传入的 model 覆盖", prd)
+        self.assertIn("默认不向浏览器返回 provider 或 memory 的原始错误细节", readme)
+        self.assertIn("默认不得向浏览器返回 provider/memory 原始错误细节", prd)
         self.assertIn("WSD_ALLOW_CLIENT_MODEL_OVERRIDE=0", env_example)
+        self.assertIn("WSD_DEBUG_ERRORS=0", env_example)
 
     def test_docs_require_shared_skill_metadata_parser(self) -> None:
         readme = Path("README.md").read_text(encoding="utf-8")
@@ -745,6 +748,32 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertEqual(len(body["queries"]), 3)
         self.assertIn("当前用户原话：在哪家公司呢", body["queries"][0])
         self.assertEqual(body["queries"][1:], ["Participant A userID=user-a 当前问题：在哪家公司呢", "Participant A userID=user-a 上一问：做什么工作"])
+
+    def test_generic_http_recall_preserves_backend_order_without_local_rerank(self) -> None:
+        with patch("wechat_skill_distill.memory_recall.requests.post") as post:
+            post.return_value = MockResponse(
+                {
+                    "results": [
+                        {"id": "g-low", "text": "后端认为这条应该排第一", "score": 0.1},
+                        {"id": "g-high", "text": "后端认为这条应该排第二", "score": 0.99},
+                    ]
+                }
+            )
+
+            hits = recall_for_chat(
+                {
+                    "message": "之前聊过什么",
+                    "skill": "# Participant A Chat Skill",
+                    "persona": {"name": "Participant A", "userId": "user-a"},
+                },
+                env={
+                    "WSD_MEMORY_RECALL_BACKEND": "generic-http",
+                    "MEMORY_RECALL_URL": "https://memory.example.test/recall",
+                },
+            )
+
+        self.assertEqual([hit["id"] for hit in hits], ["g-low", "g-high"])
+        self.assertEqual([hit["score"] for hit in hits], [0.1, 0.99])
 
     def test_mem0_recall_backend_uses_client_search_when_configured(self) -> None:
         class FakeMemoryClient:
@@ -895,6 +924,38 @@ class ToolkitCoreTest(unittest.TestCase):
             ["客户端当前人的事实", "服务端当前人的事实", "服务端未标注事实"],
         )
         self.assertEqual(counts, {"server_hits": 2, "local_hits": 1})
+
+    def test_public_error_payload_hides_backend_details_by_default(self) -> None:
+        provider_payload = public_error_payload(
+            "provider",
+            ModelCallError("model service error: HTTP 401: sk-secret https://internal.example.test/v1 raw traceback"),
+            env={},
+        )
+        memory_payload = public_error_payload(
+            "memory",
+            MemoryRecallError("Hindsight recall HTTP 500: https://memory.example.test/api bce-secret raw traceback"),
+            env={},
+        )
+        combined = json.dumps([provider_payload, memory_payload], ensure_ascii=False)
+
+        self.assertEqual(provider_payload["kind"], "provider")
+        self.assertEqual(memory_payload["kind"], "memory")
+        self.assertIn("模型服务调用失败", provider_payload["error"])
+        self.assertIn("记忆服务调用失败", memory_payload["error"])
+        self.assertNotIn("sk-secret", combined)
+        self.assertNotIn("bce-secret", combined)
+        self.assertNotIn("internal.example.test", combined)
+        self.assertNotIn("memory.example.test", combined)
+        self.assertNotIn("traceback", combined.lower())
+        self.assertNotIn("detail", provider_payload)
+        self.assertNotIn("detail", memory_payload)
+
+    def test_public_error_payload_can_include_details_when_debug_enabled(self) -> None:
+        payload = public_error_payload("provider", ModelCallError("raw provider detail"), env={"WSD_DEBUG_ERRORS": "1"})
+
+        self.assertEqual(payload["kind"], "provider")
+        self.assertIn("模型服务调用失败", payload["error"])
+        self.assertEqual(payload["detail"], "raw provider detail")
 
     def test_openai_compatible_chat_call_uses_server_side_protocol(self) -> None:
         with patch("wechat_skill_distill.model_client.requests.post") as post:

@@ -1,46 +1,90 @@
 # wechat-skill-distill
 
-Turn WeFlow-exported WeChat private chats into reusable chat skills, memory packages, and a local companion chat UI.
+`wechat-skill-distill` 是一个本地优先的微信聊天记录蒸馏工具。它把 WeFlow 导出的微信私聊 JSON 转成可复用的聊天 skill、记忆数据包和本地智能陪伴网页。
 
-## What This Repository Is
+这个项目不负责导出微信数据。请先用 [WeFlow](https://github.com/hicccc77/WeFlow) 导出 JSON，再用本项目处理。
 
-`wechat-skill-distill` is a local-first toolkit for people who already have a WeFlow JSON export and want to reuse that chat history safely:
+![聊天界面桌面截图](docs/assets/chat-ui-overview.png)
 
-- per-user style-only skills
-- memory backend imports for JSONL, Hindsight, Mem0, or generic HTTP
-- memory-aware chat skills for agent conversations
-- a browser chat UI for trying the generated companion locally
+## 这个代码库能做什么
 
-It does not export WeChat data by itself. Use [WeFlow](https://github.com/hicccc77/WeFlow) to export a private chat as JSON, then use this project to distill skills and memory.
+| 能力 | 产物 | 适合谁 |
+| --- | --- | --- |
+| 提取说话风格 | `*.skill` | 想审查或复用某个人微信语气的用户 |
+| 生成长期记忆 | `memory.jsonl` 或写入云记忆 | 想把聊天事实、时间线、偏好放进记忆库的用户 |
+| 生成带记忆的聊天 skill | `*.chat-memory.skill` | 想让 agent 必要时检索记忆再按风格回复的用户 |
+| 本地网页试聊 | `chat-ui` | 想直接体验智能陪伴效果的用户 |
 
-The toolkit is backend-neutral. Hindsight, Mem0, JSONL, and generic HTTP are treated as memory adapters.
+项目支持 JSONL、Hindsight、Mem0 和通用 HTTP 记忆后端。浏览器不会收到 API key、模型地址、完整 skill、user_id 或原始记忆命中。
 
-![Chat UI overview](docs/assets/chat-ui-overview.png)
+## 新手从这里开始
 
-## Start Here
+建议按下面顺序阅读：
 
-New users should follow these docs in order:
+1. [WeFlow 导出教程](docs/WEFLOW_EXPORT.md)：从 WeFlow 导出微信私聊 JSON。
+2. [新手入门](docs/GETTING_STARTED.md)：安装、配置参与者、生成 skill、启动网页。
+3. [配置指南](docs/CONFIGURATION.md)：解释 `config.local.json`、`.env`、模型和记忆后端。
+4. [用户示例](docs/USER_EXAMPLES.md)：按“只要风格”“本地记忆试聊”“云记忆陪伴”等目标选择命令。
+5. [完整案例教程](docs/CASE_TUTORIAL.md)：用 `examples/chat.json` 跑通完整流程。
 
-1. [WeFlow export guide](docs/WEFLOW_EXPORT.md): export a WeChat private chat as JSON.
-2. [Getting started](docs/GETTING_STARTED.md): install, configure participants, generate skills, start the chat UI.
-3. [Case tutorial](docs/CASE_TUTORIAL.md): run the complete demo from `examples/chat.json`.
-
-If you only want the shortest local demo:
+## 10 分钟跑通示例
 
 ```bash
+git clone https://github.com/xmh1011/wechat-skill-distill.git
+cd wechat-skill-distill
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -e .
 cp .env.example .env
 cp config.example.json config.local.json
-
-wechat-skill-distill inspect --input examples/chat.json --config config.example.json
-wechat-skill-distill extract-skills --input examples/chat.json --out-dir /tmp/wsd-demo/generated-skills --config config.example.json
-wechat-skill-distill generate-chat-skills --input examples/chat.json --out-dir /tmp/wsd-demo/generated-chat-skills --memory-backend jsonl --config config.example.json
-wechat-skill-distill import --backend jsonl --input examples/chat.json --output /tmp/wsd-demo/memory.jsonl --dry-run --config config.example.json
 ```
 
-To try the web UI, configure a model in `.env`, then run:
+检查示例聊天：
+
+```bash
+wechat-skill-distill inspect --input examples/chat.json --config config.example.json
+```
+
+示例输出会类似：
+
+```text
+messages: raw=5 importable=4 skipped=1
+participants:
+  - participant_a (Participant A): 2 messages
+  - participant_b (Participant B): 2 messages
+```
+
+生成纯风格 skill：
+
+```bash
+wechat-skill-distill extract-skills \
+  --input examples/chat.json \
+  --out-dir /tmp/wsd-demo/generated-skills \
+  --config config.example.json
+```
+
+生成带记忆规则的 chat skill：
+
+```bash
+wechat-skill-distill generate-chat-skills \
+  --input examples/chat.json \
+  --out-dir /tmp/wsd-demo/generated-chat-skills \
+  --memory-backend jsonl \
+  --config config.example.json
+```
+
+生成本地 JSONL 记忆包：
+
+```bash
+wechat-skill-distill import \
+  --backend jsonl \
+  --input examples/chat.json \
+  --output /tmp/wsd-demo/memory.jsonl \
+  --dry-run \
+  --config config.example.json
+```
+
+配置 `.env` 后启动网页：
 
 ```bash
 wechat-skill-distill chat-ui \
@@ -50,312 +94,96 @@ wechat-skill-distill chat-ui \
   --skill /tmp/wsd-demo/generated-chat-skills/Participant\ A.chat-memory.skill
 ```
 
-Mobile/narrow-screen layout:
+移动窄屏界面：
 
-![Chat UI mobile](docs/assets/chat-ui-mobile.png)
+![聊天界面移动截图](docs/assets/chat-ui-mobile.png)
 
-## What It Does
+## 配置最小例子
 
-1. Parse WeFlow JSON exports.
-2. Extract one independent style-only skill per participant.
-3. Import chat records into a memory backend.
-4. Generate chat skills that know how to recall memory.
-5. Keep secrets out of generated files and git.
+### 参与者配置
 
-## Typical Use Cases
-
-- Distill your own or a friend's WeChat style into a reviewable `.skill` file.
-- Build a memory-aware companion persona from a WeFlow private-chat export.
-- Import normalized chat memories into JSONL first, then Hindsight, Mem0, or an internal memory service.
-- Test a generated skill in a local browser UI without exposing API keys, raw skill text, user IDs, or memory backend details to the browser.
-- Evaluate whether generated skills are too thin, missing style signals, or mixing participants.
-
-## File Types
-
-This toolkit intentionally generates two different skill artifacts:
-
-| Command | Output | Memory section | Use case |
-| --- | --- | --- | --- |
-| `extract-skills` | `Participant A.skill` | No | Style-only prompting, manual review, offline role voice. |
-| `generate-chat-skills` | `Participant A.chat-memory.skill` | Yes | Agent chats that should recall facts from JSONL, Hindsight, Mem0, or generic HTTP memory. |
-
-## Install
-
-```bash
-git clone <your-repo-url> wechat-skill-distill
-cd wechat-skill-distill
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -e .
-cp .env.example .env
-cp config.example.json config.local.json
-```
-
-Edit `.env` and `config.local.json` locally. Do not commit them.
-
-## Participant Mapping
-
-WeFlow exports usually contain `isSend`, `senderUsername`, and `senderDisplayName`.
-This toolkit does not assume who the users are. Configure participants in `config.local.json`:
+`config.local.json` 用来告诉工具“哪一方是谁”。WeFlow 通常有 `isSend` 字段，常见写法：
 
 ```json
 {
   "participants": {
-    "0": { "user_id": "friend", "name": "Friend" },
-    "1": { "user_id": "me", "name": "Me" }
+    "0": { "user_id": "friend", "name": "朋友" },
+    "1": { "user_id": "me", "name": "我" }
   }
 }
 ```
 
-Keys can be either WeFlow `isSend` values (`"0"`, `"1"`) or exact `senderUsername` values.
+如果你的 WeFlow JSON 里有稳定的 `senderUsername`，也可以用它做 key。详情见 [配置指南](docs/CONFIGURATION.md)。
 
-## WeFlow Export
+### 模型配置
 
-This project does not automate WeChat itself. Use WeFlow to export a private chat as JSON, then verify:
-
-```bash
-wechat-skill-distill weflow-guide
-wechat-skill-distill inspect --input examples/chat.json --config config.local.json
-wechat-skill-distill doctor --input examples/chat.json --config config.local.json
-```
-
-Full export walkthrough: [docs/WEFLOW_EXPORT.md](docs/WEFLOW_EXPORT.md).
-
-`inspect` shows raw/importable/skipped message counts, date range, participants, message type distribution, and skip reasons. Use `--json` for automation or `--output reports/inspect.json` to save the report.
-
-## Redact Sensitive Values
+`.env` 用来配置模型服务。OpenAI-compatible 网关示例：
 
 ```bash
-wechat-skill-distill redact \
-  --input examples/chat.json \
-  --output data/chat.redacted.json \
-  --report reports/redaction.json
+WSD_MODEL_PROVIDER=openai
+WSD_OPENAI_BASE_URL=https://api.openai.com/v1
+WSD_OPENAI_MODEL=gpt-4.1-mini
+WSD_OPENAI_API_KEY=...
 ```
 
-Default rules mask common phone numbers, emails, URLs, mainland China ID card numbers, and bank-card-like numbers. Provide `--policy config/redaction.json` to use custom regex rules.
+也支持 Anthropic 和 Gemini，见 [.env.example](.env.example) 和 [配置指南](docs/CONFIGURATION.md)。
 
-## Generate Style Skills
+### 记忆配置
+
+先用 JSONL dry-run 是最稳妥的：
 
 ```bash
-wechat-skill-distill extract-skills \
-  --input examples/chat.json \
-  --out-dir generated-skills \
-  --config config.local.json
+WSD_MEMORY_RECALL_BACKEND=jsonl
+JSONL_MEMORY_PATH=/tmp/wsd-demo/memory.jsonl
 ```
 
-Outputs look like:
+确认效果后再接 Hindsight、Mem0 或通用 HTTP 记忆服务。
 
-```text
-generated-skills/Participant A.skill
-generated-skills/Participant B.skill
-```
+## 常用命令
 
-输出文件名会从展示名派生并做文件系统安全转义；真实展示名和 user_id 保存在 skill frontmatter，服务端和评估器不会依赖文件名反推身份。同名或安全化后同名时会追加短 hash 防止覆盖。服务端 persona 摘要和评估报告使用同一套 skill metadata 解析规则，优先使用 frontmatter 的 display_name；user_id 只在服务端解析、召回和评估链路使用，只解析文件开头的 frontmatter block。
+| 目标 | 命令 |
+| --- | --- |
+| 检查导出文件 | `wechat-skill-distill inspect --input data/my-chat.json --config config.local.json` |
+| 检查环境 | `wechat-skill-distill doctor --input data/my-chat.json --config config.local.json` |
+| 脱敏聊天记录 | `wechat-skill-distill redact --input data/my-chat.json --output data/my-chat.redacted.json --report reports/redaction.json` |
+| 生成纯风格 skill | `wechat-skill-distill extract-skills --input data/my-chat.json --out-dir generated-skills --config config.local.json` |
+| 生成带记忆 skill | `wechat-skill-distill generate-chat-skills --input data/my-chat.json --out-dir generated-chat-skills --memory-backend jsonl --config config.local.json` |
+| 本地记忆 dry-run | `wechat-skill-distill import --backend jsonl --input data/my-chat.json --output exports/memory.jsonl --dry-run --config config.local.json` |
+| 启动网页试聊 | `wechat-skill-distill chat-ui --env-file .env --skill generated-chat-skills/朋友.chat-memory.skill` |
+| 评估 skill | `wechat-skill-distill evaluate-skills --skills generated-skills generated-chat-skills --input data/my-chat.json --config config.local.json` |
 
-Each skill is independent and contains only that user’s style profile and examples. It does not contain a memory backend, recall instructions, or API key references.
+## 产物区别
 
-## Import Memory
+| 命令 | 输出 | 是否包含记忆规则 | 用途 |
+| --- | --- | --- | --- |
+| `extract-skills` | `某人.skill` | 否 | 只模仿说话风格，适合先人工审查 |
+| `generate-chat-skills` | `某人.chat-memory.skill` | 是 | 回复事实问题时先检索记忆，再按风格回答 |
+| `import --backend jsonl` | `memory.jsonl` | 不适用 | 本地可审查的记忆数据包 |
 
-### Local JSONL Dry Run
+`evaluate-skills` 会检查章节、身份边界、样本泄漏和风格完整度。缺少表达节奏、问句占比、多行消息占比或表情/符号倾向时会给出 warning，帮助你判断 skill 是否过薄。
 
-```bash
-wechat-skill-distill import \
-  --backend jsonl \
-  --input examples/chat.json \
-  --group-by message \
-  --output exports/memory.jsonl \
-  --dry-run \
-  --config config.local.json
-```
+## 隐私与安全
 
-### Hindsight
+- `.env`、原始聊天 JSON、`data/`、`exports/`、`generated-skills/`、`generated-chat-skills/`、`logs/`、`runs/` 默认不提交。
+- 导入云记忆前，先用 `--dry-run` 生成本地 JSONL 检查。
+- 对外分享前，先运行 `redact` 脱敏手机号、邮箱、URL、身份证、银行卡等内容。
+- 生成的 skill 不会写入 API key。
+- 如果记忆里没有证据，chat skill 会要求降低确定性或追问，而不是编造事实。
 
-```bash
-set -a && source .env && set +a
-wechat-skill-distill import \
-  --backend hindsight \
-  --input examples/chat.json \
-  --group-by day \
-  --config config.local.json
-```
-
-### Mem0
-
-Install the optional client first:
-
-```bash
-pip install -e '.[mem0]'
-```
-
-Then run:
-
-```bash
-set -a && source .env && set +a
-wechat-skill-distill import \
-  --backend mem0 \
-  --input examples/chat.json \
-  --group-by message \
-  --config config.local.json
-```
-
-### Generic HTTP
-
-```bash
-export MEMORY_WRITE_URL='https://memory.example.com/import'
-export MEMORY_API_KEY='...'
-
-wechat-skill-distill import \
-  --backend generic-http \
-  --input examples/chat.json \
-  --group-by day \
-  --config config.local.json
-```
-
-The generic adapter POSTs:
-
-```json
-{
-  "items": [
-    {
-      "content": "...",
-      "metadata": {},
-      "tags": []
-    }
-  ]
-}
-```
-
-## Generate Memory-Aware Chat Skills
-
-```bash
-wechat-skill-distill generate-chat-skills \
-  --input examples/chat.json \
-  --out-dir generated-chat-skills \
-  --memory-backend jsonl \
-  --config config.local.json
-```
-
-Use `--memory-backend hindsight`, `mem0`, or `generic-http` to generate backend-specific recall instructions.
-
-Outputs look like:
-
-```text
-generated-chat-skills/Participant A.chat-memory.skill
-generated-chat-skills/Participant B.chat-memory.skill
-```
-
-输出文件名会从展示名派生并做文件系统安全转义；真实展示名和 user_id 保存在 skill frontmatter，服务端和评估器不会依赖文件名反推身份。同名或安全化后同名时会追加短 hash 防止覆盖。服务端 persona 摘要和评估报告使用同一套 skill metadata 解析规则，优先使用 frontmatter 的 display_name；user_id 只在服务端解析、召回和评估链路使用，只解析文件开头的 frontmatter block。
-
-## Simulate Chat With A Model
-
-```bash
-wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765 --env-file .env --skill generated-chat-skills/Participant A.chat-memory.skill
-```
-
-Open the printed URL and chat with the preloaded persona. Pass `--skill` multiple times to preload multiple personas. The page calls the local `chat-ui` server, and the server calls the configured model provider. API keys stay in `.env` or environment variables and are never sent to the browser.
-
-多 persona 模拟时，每个 persona 维护独立对话历史和本轮记忆状态；切换对象不会把上一位对象的 history 传给下一位。导出对话时只导出当前 persona 的 transcript 和基础身份摘要。
-
-浏览器只接收 persona 摘要和 skill_id，不接收完整 skill 文本，也不接收本地 skill 文件名，不接收 user_id，不接收常见表达短语；聊天请求只提交 skill_id，完整 skill 由本地服务端在调用模型前注入。聊天 API 不接受浏览器传入 raw skill 或 persona 覆盖；服务端未通过 `--skill` 预加载对象时会拒绝聊天请求。模型 base URL、provider、model 和 API key 只保留在本地服务端，`/api/runtime` 只返回服务是否已连接和云记忆是否接入；浏览器不接收 provider、model、memory backend 名称或 bank_id。浏览器不提交 provider 覆盖字段，浏览器不提交模型覆盖字段，默认 provider 和模型都由服务端环境变量决定。聊天响应只返回文本和记忆计数，不返回 provider、model 或 usage。默认不向浏览器返回 provider 或 memory 的原始错误细节；本地排查时可显式设置 `WSD_DEBUG_ERRORS=1`。
-
-If a runtime memory backend is configured, `/api/chat` recalls relevant memories before calling the model and injects those hits with the selected skill. Raw memory hits are not returned to the browser, and the browser does not upload memory files or run its own retrieval. 服务端会按 metadata、participants 和 user:<id> tags 过滤明确属于其他 user 的命中；metadata.userID 和 participants 可以是数组或逗号分隔字符串。JSONL fallback 只使用通用 token 和中文 bigram 匹配，不基于记忆文本做业务关键词过滤。 The UI only shows whether related context was referenced. The recall adapter stays generic; factual boundaries are enforced by the generated `.chat-memory.skill` and the server-side companion prompt.
-
-Recall backend selection defaults to `auto`: Hindsight is used when `HINDSIGHT_API_KEY` is present, otherwise Generic HTTP when `MEMORY_RECALL_URL` is present, otherwise Mem0 when `MEM0_API_KEY` is present, otherwise JSONL when `JSONL_MEMORY_PATH` is present. Set `WSD_MEMORY_RECALL_BACKEND=off` to disable server-side recall.
-
-```bash
-WSD_MEMORY_RECALL_BACKEND=auto
-WSD_MEMORY_RECALL_MODE=auto
-WSD_MEMORY_RESULT_LIMIT=24
-WSD_MEMORY_MAX_TOKENS=3200
-WSD_RECALL_QUERY_PLANNER=auto
-WSD_MEMORY_QUERY_VARIANTS=1
-```
-
-Hindsight recall:
-
-```bash
-HINDSIGHT_API_URL=https://cloud.memory.bj.baidubce.com/api
-HINDSIGHT_BANK_ID=your-chat-bank
-HINDSIGHT_API_KEY=...
-WSD_HINDSIGHT_TYPES=world,observation
-WSD_HINDSIGHT_MAX_TOKENS=3200
-```
-
-Generic HTTP recall:
-
-```bash
-MEMORY_RECALL_URL=https://memory.example.com/recall
-MEMORY_API_KEY=...
-```
-
-The Generic HTTP recall endpoint receives `query`, `queries`, `user_id`, `persona`, `history`, `tags`, `limit`, and `max_tokens`, and should return either a list or an object with `results`, `memories`, `data`, or `items`. Each item may use `text`, `content`, `memory`, or `value` for the memory text.
-
-Mem0 recall:
-
-```bash
-pip install -e '.[mem0]'
-MEM0_API_KEY=...
-```
-
-JSONL recall:
-
-```bash
-JSONL_MEMORY_PATH=exports/memory.jsonl
-```
-
-Recall runs in `auto` mode by default: lightweight greetings do not query memory, factual turns build a query from the current message, necessary recent user questions, and the active persona. `WSD_RECALL_QUERY_PLANNER=auto` lets the server-side model create one faithful query when model credentials are configured；query planner 只整理指代和上下文，不扩展业务关键词。The harness uses a 默认单 query policy；排序和 rerank 交给记忆后端。Hindsight 和 Mem0 始终只向后端发送一条 query，避免 harness 循环召回后做本地合并排序。Hindsight-specific recall first tries strict `user:<id>` scoped recall, then falls back to the skill's conversation tags when the strict pass returns no facts. Other backends receive the same user/persona/query contract and keep their own ranking order. If `WSD_MEMORY_QUERY_VARIANTS` is explicitly set above `1`, Generic HTTP receives all variants in one request through `queries`, so rerank 仍由该记忆后端统一完成。
-
-Supported model protocols:
-
-| Provider | Env vars | Notes |
-| --- | --- | --- |
-| `openai` | `WSD_OPENAI_BASE_URL`, `WSD_OPENAI_MODEL`, `WSD_OPENAI_API_KEY` | OpenAI-compatible chat completions. Works with OpenAI, OneAPI, DeepSeek-compatible gateways, and similar services. |
-| `anthropic` | `WSD_ANTHROPIC_BASE_URL`, `WSD_ANTHROPIC_MODEL`, `WSD_ANTHROPIC_API_KEY` | Anthropic Messages API. |
-| `gemini` | `WSD_GEMINI_BASE_URL`, `WSD_GEMINI_MODEL`, `WSD_GEMINI_API_KEY` | Gemini `generateContent` API. |
-
-Set `WSD_ALLOW_CLIENT_PROVIDER_OVERRIDE=1` or `WSD_ALLOW_CLIENT_MODEL_OVERRIDE=1` only if you explicitly want API clients to override the server configured provider or model per request. The browser UI does not send provider or model overrides by default.
-
-Keyboard behavior:
-
-- `Enter` sends the message.
-- `Shift+Enter` inserts a new line.
-
-## Evaluate Skills
-
-```bash
-wechat-skill-distill evaluate-skills \
-  --skills generated-skills generated-chat-skills \
-  --input examples/chat.json \
-  --config config.local.json \
-  --output reports/quality.json
-```
-
-The evaluator checks required sections, style-only vs memory-aware file type rules, userID markers, participant-name leakage, and verbatim source text outside the sample section. 缺少表达节奏、问句占比、多行消息占比或表情/符号倾向时会给出 warning，帮助识别过薄的风格画像。Use `--fail-on-issue` in automation.
-
-## Safety
-
-- `.env`, raw chat exports, generated exports, logs, and runs are ignored.
-- API keys are read from environment variables or local config only.
-- Use `--dry-run` before writing to a remote memory backend.
-
-## Development Checks
+## 开发检查
 
 ```bash
 python3 -m unittest discover -s tests
-wechat-skill-distill inspect --input examples/chat.json --config config.local.json
-wechat-skill-distill redact --input examples/chat.json --output data/chat.redacted.json --report reports/redaction.json
-wechat-skill-distill doctor --input examples/chat.json --config config.local.json
-wechat-skill-distill extract-skills --input examples/chat.json --out-dir generated-skills --config config.local.json
-wechat-skill-distill generate-chat-skills --input examples/chat.json --out-dir generated-chat-skills --memory-backend jsonl --config config.local.json
-wechat-skill-distill import --backend jsonl --input examples/chat.json --output exports/memory.jsonl --dry-run --config config.local.json
-wechat-skill-distill chat-ui --host 127.0.0.1 --port 8765
-wechat-skill-distill evaluate-skills --skills generated-skills generated-chat-skills --input examples/chat.json --config config.local.json
+python3 -m py_compile wechat_skill_distill/*.py
+node --check wechat_skill_distill/web/app.js
 ```
 
-## Product Notes
+## 更多文档
 
-- [PRD.md](PRD.md) defines the product scope, scenarios, CLI contract, and roadmap.
-- [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) is the beginner path.
-- [docs/CASE_TUTORIAL.md](docs/CASE_TUTORIAL.md) is a complete worked example.
-- [docs/WEFLOW_EXPORT.md](docs/WEFLOW_EXPORT.md) explains how to get JSON from WeFlow.
-- [docs/research/open-source-review.md](docs/research/open-source-review.md) records the open-source projects reviewed while shaping this product.
+- [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)：新手入门。
+- [docs/CONFIGURATION.md](docs/CONFIGURATION.md)：配置指南。
+- [docs/USER_EXAMPLES.md](docs/USER_EXAMPLES.md)：按用户目标组织的使用示例。
+- [docs/CASE_TUTORIAL.md](docs/CASE_TUTORIAL.md)：完整案例教程。
+- [docs/WEFLOW_EXPORT.md](docs/WEFLOW_EXPORT.md)：WeFlow JSON 导出教程。
+- [PRD.md](PRD.md)：产品范围、场景和路线图。
+- [docs/research/open-source-review.md](docs/research/open-source-review.md)：开源项目调研记录。

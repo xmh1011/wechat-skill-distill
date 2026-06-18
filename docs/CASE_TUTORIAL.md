@@ -32,9 +32,10 @@ wechat-skill-distill inspect --input examples/chat.json --config config.example.
 你应该看到类似信息：
 
 ```text
-raw messages: 2
-importable messages: 2
-participants: Participant A, Participant B
+messages: raw=5 importable=4 skipped=1
+participants:
+  - participant_a (Participant A): 2 messages
+  - participant_b (Participant B): 2 messages
 ```
 
 如果 `importable messages` 很低，说明导出里可能大多是非文本消息，或者 parser 不支持当前格式。

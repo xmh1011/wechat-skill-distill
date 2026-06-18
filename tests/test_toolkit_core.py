@@ -857,59 +857,87 @@ class ToolkitCoreTest(unittest.TestCase):
         getting_started = Path("docs/GETTING_STARTED.md").read_text(encoding="utf-8")
         weflow_export = Path("docs/WEFLOW_EXPORT.md").read_text(encoding="utf-8")
         case_tutorial = Path("docs/CASE_TUTORIAL.md").read_text(encoding="utf-8")
+        configuration = Path("docs/CONFIGURATION.md").read_text(encoding="utf-8")
+        user_examples = Path("docs/USER_EXAMPLES.md").read_text(encoding="utf-8")
 
         self.assertIn("https://github.com/hicccc77/WeFlow", readme)
         self.assertIn("https://github.com/hicccc77/WeFlow", weflow_export)
+        self.assertIn("这个代码库能做什么", readme)
+        self.assertIn("docs/CONFIGURATION.md", readme)
+        self.assertIn("docs/USER_EXAMPLES.md", readme)
         self.assertIn("这个工具做什么", getting_started)
         self.assertIn("案例目标", case_tutorial)
         self.assertIn("wechat-skill-distill inspect", case_tutorial)
         self.assertIn("chat-ui", case_tutorial)
+        self.assertIn("配置指南", configuration)
+        self.assertIn("参与者配置", configuration)
+        self.assertIn("用户示例", user_examples)
+        self.assertIn("示例 1：我只想提取一个人的说话风格", user_examples)
+        self.assertIn("示例 3：我想用本地 JSONL 记忆试聊", user_examples)
+        self.assertIn("示例 4：我想把聊天记录导入 Hindsight", user_examples)
+        self.assertIn("示例 6：我准备对外分享产物", user_examples)
         self.assertIn("docs/assets/chat-ui-overview.png", readme)
         self.assertTrue(Path("docs/assets/chat-ui-overview.png").is_file())
         self.assertTrue(Path("docs/assets/chat-ui-mobile.png").is_file())
+        self.assertNotIn("What This Repository Is", readme)
 
     def test_docs_keep_memory_backend_responsible_for_ranking(self) -> None:
-        readme = Path("README.md").read_text(encoding="utf-8")
+        docs = "\n".join(
+            [
+                Path("README.md").read_text(encoding="utf-8"),
+                Path("docs/CONFIGURATION.md").read_text(encoding="utf-8"),
+            ]
+        )
         prd = Path("PRD.md").read_text(encoding="utf-8")
         env_example = Path(".env.example").read_text(encoding="utf-8")
 
-        self.assertIn("WSD_MEMORY_QUERY_VARIANTS=1", readme)
+        self.assertIn("WSD_MEMORY_QUERY_VARIANTS=1", docs)
         self.assertIn("WSD_MEMORY_QUERY_VARIANTS=1", env_example)
-        self.assertIn("WSD_RECALL_QUERY_PLANNER=auto", readme)
+        self.assertIn("WSD_RECALL_QUERY_PLANNER=auto", docs)
         self.assertIn("WSD_RECALL_QUERY_PLANNER=auto", env_example)
-        self.assertIn("query planner 只整理指代和上下文", readme)
+        self.assertIn("query planner 只整理指代和上下文", docs)
         self.assertIn("query planner 默认 auto", prd)
-        self.assertIn("默认单 query", readme)
-        self.assertIn("排序和 rerank 交给记忆后端", readme)
-        self.assertIn("Hindsight 和 Mem0 始终只向后端发送一条 query", readme)
+        self.assertIn("默认单 query", docs)
+        self.assertIn("排序和 rerank 交给记忆后端", docs)
+        self.assertIn("Hindsight/Mem0 adapter 始终只发送一条 query", docs)
         self.assertIn("默认单 query", prd)
         self.assertIn("Hindsight/Mem0 adapter 始终只发送一条 query", prd)
-        self.assertNotIn("WSD_MEMORY_QUERY_VARIANTS=3", readme)
+        self.assertNotIn("WSD_MEMORY_QUERY_VARIANTS=3", docs)
         self.assertNotIn("WSD_MEMORY_QUERY_VARIANTS=3", env_example)
 
     def test_docs_describe_memory_hit_identity_filtering(self) -> None:
-        readme = Path("README.md").read_text(encoding="utf-8")
+        docs = "\n".join(
+            [
+                Path("README.md").read_text(encoding="utf-8"),
+                Path("docs/CONFIGURATION.md").read_text(encoding="utf-8"),
+            ]
+        )
         prd = Path("PRD.md").read_text(encoding="utf-8")
 
-        self.assertIn("服务端会按 metadata、participants 和 user:<id> tags 过滤明确属于其他 user 的命中", readme)
-        self.assertIn("metadata.userID 和 participants 可以是数组或逗号分隔字符串", readme)
-        self.assertIn("JSONL fallback 只使用通用 token 和中文 bigram 匹配", readme)
-        self.assertIn("不基于记忆文本做业务关键词过滤", readme)
+        self.assertIn("服务端会按 metadata、participants 和 user:<id> tags 过滤明确属于其他 user 的命中", docs)
+        self.assertIn("metadata.userID 和 participants 可以是数组或逗号分隔字符串", docs)
+        self.assertIn("JSONL fallback 只使用通用 token 和中文 bigram 匹配", docs)
+        self.assertIn("不基于记忆文本做业务关键词过滤", docs)
         self.assertIn("模型请求前必须过滤明确属于其他 userID 的 memory hits", prd)
         self.assertIn("过滤只基于 metadata、participants 和 user:<id> tags", prd)
         self.assertIn("userID 和 participants 必须兼容数组和逗号分隔字符串", prd)
 
     def test_docs_keep_raw_skill_server_side(self) -> None:
-        readme = Path("README.md").read_text(encoding="utf-8")
+        docs = "\n".join(
+            [
+                Path("README.md").read_text(encoding="utf-8"),
+                Path("docs/CONFIGURATION.md").read_text(encoding="utf-8"),
+            ]
+        )
         prd = Path("PRD.md").read_text(encoding="utf-8")
         env_example = Path(".env.example").read_text(encoding="utf-8")
 
-        self.assertIn("浏览器只接收 persona 摘要和 skill_id，不接收完整 skill 文本", readme)
-        self.assertIn("也不接收本地 skill 文件名", readme)
-        self.assertIn("不接收 user_id", readme)
-        self.assertIn("不接收常见表达短语", readme)
-        self.assertIn("聊天请求只提交 skill_id", readme)
-        self.assertIn("聊天 API 不接受浏览器传入 raw skill 或 persona 覆盖", readme)
+        self.assertIn("浏览器只接收 persona 摘要和 skill_id，不接收完整 skill 文本", docs)
+        self.assertIn("也不接收本地 skill 文件名", docs)
+        self.assertIn("不接收 user_id", docs)
+        self.assertIn("不接收常见表达短语", docs)
+        self.assertIn("聊天请求只提交 skill_id", docs)
+        self.assertIn("聊天 API 不接受浏览器传入 raw skill 或 persona 覆盖", docs)
         self.assertIn("完整 skill 文本只保存在本地服务端", prd)
         self.assertIn("浏览器不得接收或回传 raw skill 文本", prd)
         self.assertIn("聊天 API 必须拒绝未预加载 skill 的请求", prd)
@@ -917,52 +945,67 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertIn("浏览器不得接收本地 skill 文件名", prd)
         self.assertIn("浏览器不得接收 user_id", prd)
         self.assertIn("浏览器不得接收常见表达短语", prd)
-        self.assertIn("模型 base URL、provider、model 和 API key 只保留在本地服务端", readme)
+        self.assertIn("模型 base URL、provider、model 和 API key 只保留在本地服务端", docs)
         self.assertIn("浏览器不得接收模型 base URL", prd)
         self.assertIn("浏览器不得接收 provider/model 摘要", prd)
-        self.assertIn("/api/runtime` 只返回服务是否已连接和云记忆是否接入", readme)
-        self.assertNotIn("/api/runtime` 只返回 provider、model", readme)
-        self.assertIn("浏览器不提交模型覆盖字段", readme)
-        self.assertIn("浏览器不提交 provider 覆盖字段", readme)
+        self.assertIn("/api/runtime` 只返回服务是否已连接和云记忆是否接入", docs)
+        self.assertNotIn("/api/runtime` 只返回 provider、model", docs)
+        self.assertIn("不提交模型覆盖字段", docs)
+        self.assertIn("不提交 provider 覆盖字段", docs)
         self.assertIn("默认不得接受浏览器传入的 model 覆盖", prd)
         self.assertIn("默认不得接受浏览器传入的 provider 覆盖", prd)
-        self.assertIn("默认不向浏览器返回 provider 或 memory 的原始错误细节", readme)
+        self.assertIn("默认不向浏览器返回 provider 或 memory 的原始错误细节", docs)
         self.assertIn("默认不得向浏览器返回 provider/memory 原始错误细节", prd)
-        self.assertIn("聊天响应只返回文本和记忆计数", readme)
+        self.assertIn("聊天响应只返回文本和记忆计数", docs)
         self.assertIn("不得返回 provider、model 或 usage", prd)
-        self.assertIn("只返回服务是否已连接和云记忆是否接入", readme)
+        self.assertIn("只返回服务是否已连接和云记忆是否接入", docs)
         self.assertIn("浏览器不得接收 memory backend 名称或 bank_id", prd)
         self.assertIn("WSD_ALLOW_CLIENT_PROVIDER_OVERRIDE=0", env_example)
         self.assertIn("WSD_ALLOW_CLIENT_MODEL_OVERRIDE=0", env_example)
         self.assertIn("WSD_DEBUG_ERRORS=0", env_example)
 
     def test_docs_require_shared_skill_metadata_parser(self) -> None:
-        readme = Path("README.md").read_text(encoding="utf-8")
+        docs = "\n".join(
+            [
+                Path("README.md").read_text(encoding="utf-8"),
+                Path("docs/CONFIGURATION.md").read_text(encoding="utf-8"),
+            ]
+        )
         prd = Path("PRD.md").read_text(encoding="utf-8")
 
-        self.assertIn("服务端 persona 摘要和评估报告使用同一套 skill metadata 解析规则", readme)
-        self.assertIn("优先使用 frontmatter 的 display_name", readme)
-        self.assertIn("user_id 只在服务端解析、召回和评估链路使用", readme)
-        self.assertIn("只解析文件开头的 frontmatter block", readme)
+        self.assertIn("服务端 persona 摘要和评估报告使用同一套 skill metadata 解析规则", docs)
+        self.assertIn("优先使用 frontmatter 的 display_name", docs)
+        self.assertIn("user_id 只在服务端解析、召回和评估链路使用", docs)
+        self.assertIn("只解析文件开头的 frontmatter block", docs)
         self.assertIn("服务端 public persona 摘要和 evaluate-skills 必须复用同一套 skill metadata parser", prd)
         self.assertIn("public 摘要不得返回 user_id", prd)
         self.assertIn("metadata parser 只读取文件开头 frontmatter block", prd)
 
     def test_docs_describe_persona_scoped_chat_sessions(self) -> None:
-        readme = Path("README.md").read_text(encoding="utf-8")
+        docs = "\n".join(
+            [
+                Path("README.md").read_text(encoding="utf-8"),
+                Path("docs/CONFIGURATION.md").read_text(encoding="utf-8"),
+            ]
+        )
         prd = Path("PRD.md").read_text(encoding="utf-8")
 
-        self.assertIn("每个 persona 维护独立对话历史", readme)
-        self.assertIn("切换对象不会把上一位对象的 history 传给下一位", readme)
+        self.assertIn("每个 persona 维护独立对话历史", docs)
+        self.assertIn("切换对象不会把上一位对象的 history 传给下一位", docs)
         self.assertIn("多 persona UI 必须按 skill_id 隔离 transcript 和 recall 状态", prd)
 
     def test_docs_describe_safe_skill_artifact_identity_metadata(self) -> None:
-        readme = Path("README.md").read_text(encoding="utf-8")
+        docs = "\n".join(
+            [
+                Path("README.md").read_text(encoding="utf-8"),
+                Path("docs/CONFIGURATION.md").read_text(encoding="utf-8"),
+            ]
+        )
         prd = Path("PRD.md").read_text(encoding="utf-8")
 
-        self.assertIn("输出文件名会从展示名派生并做文件系统安全转义", readme)
-        self.assertIn("真实展示名和 user_id 保存在 skill frontmatter", readme)
-        self.assertIn("同名或安全化后同名时会追加短 hash 防止覆盖", readme)
+        self.assertIn("输出文件名会从展示名派生并做文件系统安全转义", docs)
+        self.assertIn("真实展示名和 user_id 保存在 skill frontmatter", docs)
+        self.assertIn("同名或安全化后同名时会追加短 hash 防止覆盖", docs)
         self.assertIn("skill frontmatter 必须包含稳定 `name`、`user_id` 和 `display_name`", prd)
         self.assertIn("输出文件名必须做文件系统安全转义", prd)
         self.assertIn("同名或 slug 碰撞时必须追加稳定短 hash", prd)

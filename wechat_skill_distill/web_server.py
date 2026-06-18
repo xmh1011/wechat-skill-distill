@@ -19,17 +19,22 @@ def web_root() -> Path:
     return Path(str(files("wechat_skill_distill").joinpath("web")))
 
 
-def load_skill_assets(skill_paths: list[Path] | None = None) -> list[dict[str, str]]:
+def load_skill_assets(skill_paths: list[Path] | None = None, *, display_names: list[str] | None = None) -> list[dict[str, str]]:
+    configured_display_names = display_names or []
+    if skill_paths and len(configured_display_names) > len(skill_paths):
+        raise RuntimeError("--display-name cannot be provided more times than --skill")
     assets = []
     for index, path in enumerate(skill_paths or [], start=1):
         if not path.exists():
             raise RuntimeError(f"skill file not found: {path}")
         if not path.is_file():
             raise RuntimeError(f"skill path is not a file: {path}")
+        configured_display_name = configured_display_names[index - 1].strip() if index <= len(configured_display_names) else ""
         assets.append(
             {
                 "id": f"server-skill-{index}",
                 "file_name": path.name,
+                "display_name": configured_display_name,
                 "text": path.read_text(encoding="utf-8"),
             }
         )
@@ -41,9 +46,10 @@ def _skill_summary(asset: Mapping[str, str]) -> dict[str, Any]:
     file_name = str(asset.get("file_name") or "skill")
     fallback_name = file_name.replace(".chat-memory.skill", "").replace(".skill", "")
     meta = parse_skill_meta(text, fallback_name=fallback_name)
+    configured_display_name = str(asset.get("display_name") or "").strip()
     return {
         "id": str(asset.get("id") or ""),
-        "name": meta.name,
+        "name": configured_display_name or meta.name,
         "memoryAware": meta.memory_aware,
         "sampleCount": meta.sample_count,
     }
@@ -236,12 +242,12 @@ class ChatUIHandler(SimpleHTTPRequestHandler):
         self._write_json(200, public_reply)
 
 
-def serve_chat_ui(host: str, port: int, *, env_file: Path | None = None, skill_paths: list[Path] | None = None) -> None:
+def serve_chat_ui(host: str, port: int, *, env_file: Path | None = None, skill_paths: list[Path] | None = None, display_names: list[str] | None = None) -> None:
     load_env_file(env_file)
     root = web_root()
     if not (root / "index.html").exists():
         raise RuntimeError(f"chat UI assets not found: {root}")
-    preloaded_skills = load_skill_assets(skill_paths)
+    preloaded_skills = load_skill_assets(skill_paths, display_names=display_names)
     handler_class = type("ConfiguredChatUIHandler", (ChatUIHandler,), {"preloaded_skills": preloaded_skills})
     handler = partial(handler_class, directory=str(root))
     server = ThreadingHTTPServer((host, port), handler)

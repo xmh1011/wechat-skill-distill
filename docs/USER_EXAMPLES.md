@@ -65,12 +65,15 @@ WSD_MEMORY_RECALL_BACKEND=off
 ```bash
 wechat-skill-distill chat-ui \
   --env-file .env \
-  --skill generated-chat-skills/朋友.chat-memory.skill
+  --skill generated-chat-skills/朋友.chat-memory.skill \
+  --display-name 朋友昵称
 ```
 
 4. 打开终端输出的 URL。
 
 如果页面显示“服务已连接”，就可以开始试聊。
+
+`--display-name` 只改变页面显示的名字，不改变 skill 里用于模型和记忆召回的真实身份。
 
 ## 示例 3：我想用本地 JSONL 记忆试聊
 

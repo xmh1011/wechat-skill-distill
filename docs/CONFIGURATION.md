@@ -124,6 +124,17 @@ WSD_ALLOW_CLIENT_MODEL_OVERRIDE=0
 
 输出文件名会从展示名派生并做文件系统安全转义；真实展示名和 user_id 保存在 skill frontmatter。同名或安全化后同名时会追加短 hash 防止覆盖。服务端 persona 摘要和评估报告使用同一套 skill metadata 解析规则，优先使用 frontmatter 的 display_name；user_id 只在服务端解析、召回和评估链路使用，只解析文件开头的 frontmatter block。
 
+如果只想改页面上显示的名字，不改 skill 身份和记忆检索身份，可以在启动网页时加 `--display-name`。它按 `--skill` 出现顺序一一对应：
+
+```bash
+wechat-skill-distill chat-ui \
+  --env-file .env \
+  --skill generated-chat-skills/朋友.chat-memory.skill \
+  --display-name 朋友昵称
+```
+
+临时预览时也可以在 URL 后加查询参数，例如 `?displayName=朋友昵称`。多对象页面可以用 `?displayName1=第一个&displayName2=第二个`，或者用 `?displayName.server-skill-1=第一个` 精确指定。
+
 ## 4. 记忆后端配置
 
 ### 只做本地试验：JSONL

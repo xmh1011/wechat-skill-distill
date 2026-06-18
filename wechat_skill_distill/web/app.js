@@ -29,6 +29,24 @@ const els = {
   messageTemplate: document.getElementById("messageTemplate")
 };
 
+const pageConfig = new URLSearchParams(window.location.search);
+
+function configuredDisplayName(personaId, index, total) {
+  const scoped =
+    pageConfig.get(`displayName.${personaId}`) ||
+    pageConfig.get(`name.${personaId}`) ||
+    pageConfig.get(`displayName${index + 1}`) ||
+    pageConfig.get(`name${index + 1}`);
+  if (scoped && scoped.trim()) {
+    return scoped.trim();
+  }
+  if (total === 1) {
+    const single = pageConfig.get("displayName") || pageConfig.get("name");
+    return single && single.trim() ? single.trim() : "";
+  }
+  return "";
+}
+
 function stripSkillSuffix(fileName) {
   return String(fileName || "")
     .replace(/\.chat-memory\.skill$/u, "")
@@ -84,9 +102,9 @@ function normalizePersonaName(skill) {
   );
 }
 
-function normalizePersona(skill) {
-  const name = normalizePersonaName(skill);
+function normalizePersona(skill, index = 0, total = 1) {
   const id = String(skill.id || `persona-${Math.random().toString(16).slice(2)}`);
+  const name = configuredDisplayName(id, index, total) || normalizePersonaName(skill);
   const skillText = String(skill.text || "");
   const legacyFileName = String(skill["file" + "_name"] || "");
   const sampleCount = Number(skill.sampleCount);
@@ -384,7 +402,7 @@ async function loadServerSkills() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
     const skills = Array.isArray(payload.skills) ? payload.skills : [];
-    state.personas = skills.map((skill) => normalizePersona(skill));
+    state.personas = skills.map((skill, index) => normalizePersona(skill, index, skills.length));
     state.activeId = state.personas[0] ? state.personas[0].id : "";
     renderPersonas();
     if (state.personas.length) {

@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import patch
 
 import wechat_skill_distill.web_server as web_server_module
+from wechat_skill_distill.cli import build_parser
 from wechat_skill_distill.evaluation import collect_skill_paths, evaluate_skills
 from wechat_skill_distill.inspection import inspect_weflow_export
 from wechat_skill_distill.memory import build_memory_items, write_jsonl
@@ -379,6 +380,44 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertNotIn("这是不应发送到浏览器的完整样本", json.dumps(public, ensure_ascii=False))
         self.assertNotIn("可以", json.dumps(public, ensure_ascii=False))
         self.assertNotIn("哈哈", json.dumps(public, ensure_ascii=False))
+
+    def test_public_skill_display_names_can_be_configured(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "A.chat-memory.skill"
+            path.write_text(
+                '---\nname: chat-user-user-a\nuser_id: "user-a"\ndisplay_name: "Participant A"\n---\n'
+                "# Participant A Chat Skill\n\n## 记忆检索\n\n## 真实样本\n\n```text\nhello\n```\n",
+                encoding="utf-8",
+            )
+            assets = load_skill_assets([path], display_names=["Configured Person"])
+
+        public = public_skill_assets(assets)
+        resolved = resolve_preloaded_skill_payload({"skill_id": "server-skill-1"}, assets)
+
+        self.assertEqual(public[0]["name"], "Configured Person")
+        self.assertEqual(public[0]["sampleCount"], 1)
+        self.assertEqual(resolved["persona"], {"name": "Participant A", "userId": "user-a"})
+        self.assertNotIn("user-a", json.dumps(public, ensure_ascii=False))
+
+    def test_chat_ui_cli_accepts_display_name_per_skill(self) -> None:
+        parser = build_parser()
+
+        args = parser.parse_args(
+            [
+                "chat-ui",
+                "--skill",
+                "a.chat-memory.skill",
+                "--display-name",
+                "Configured A",
+                "--skill",
+                "b.chat-memory.skill",
+                "--display-name",
+                "Configured B",
+            ]
+        )
+
+        self.assertEqual([str(path) for path in args.skill_paths], ["a.chat-memory.skill", "b.chat-memory.skill"])
+        self.assertEqual(args.display_names, ["Configured A", "Configured B"])
 
     def test_skill_metadata_parser_is_consistent_across_public_api_and_evaluator(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1207,6 +1246,8 @@ class ToolkitCoreTest(unittest.TestCase):
             self.assertNotIn(private_name, source)
         self.assertIn("persona.name", source)
         self.assertIn("normalizePersona", source)
+        self.assertIn("URLSearchParams(window.location.search)", source)
+        self.assertIn("displayName", source)
         self.assertIn("persona.sampleCount", source)
         self.assertIn("skill_id: personaId", source)
         self.assertNotIn("角色 ID", source)

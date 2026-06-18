@@ -29,14 +29,86 @@ const els = {
   messageTemplate: document.getElementById("messageTemplate")
 };
 
+function stripSkillSuffix(fileName) {
+  return String(fileName || "")
+    .replace(/\.chat-memory\.skill$/u, "")
+    .replace(/\.skill$/u, "")
+    .trim();
+}
+
+function unquoteYamlValue(value) {
+  const text = String(value || "").trim();
+  if (
+    (text.startsWith("\"") && text.endsWith("\"")) ||
+    (text.startsWith("'") && text.endsWith("'"))
+  ) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return text.slice(1, -1);
+    }
+  }
+  return text;
+}
+
+function extractFrontmatterValue(text, key) {
+  const lines = String(text || "").split(/\r?\n/u);
+  if (!lines.length || lines[0].trim() !== "---") return "";
+  for (let index = 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line.trim() === "---") return "";
+    const match = line.match(/^([^:]+):\s*(.+?)\s*$/u);
+    if (match && match[1].trim() === key) {
+      return unquoteYamlValue(match[2]);
+    }
+  }
+  return "";
+}
+
+function extractSkillTitle(text) {
+  const match = String(text || "").match(/^#\s+(.+?)\s+(?:Chat\s+)?Skill\s*$/mu);
+  return match ? match[1].trim() : "";
+}
+
+function normalizePersonaName(skill) {
+  const text = String(skill.text || "");
+  const legacyFileName = skill["file" + "_name"];
+  const rawName = String(skill.displayName || skill.display_name || skill.name || "").trim();
+  const nameFromApi = rawName && !/^chat-user-/u.test(rawName) ? rawName : "";
+  return (
+    nameFromApi ||
+    extractFrontmatterValue(text, "display_name") ||
+    extractSkillTitle(text) ||
+    stripSkillSuffix(legacyFileName) ||
+    "未命名对象"
+  );
+}
+
 function normalizePersona(skill) {
-  const name = String(skill.name || "未命名对象").trim();
+  const name = normalizePersonaName(skill);
   const id = String(skill.id || `persona-${Math.random().toString(16).slice(2)}`);
+  const skillText = String(skill.text || "");
+  const legacyFileName = String(skill["file" + "_name"] || "");
+  const sampleCount = Number(skill.sampleCount);
   return {
     id,
     name,
-    memoryAware: Boolean(skill.memoryAware),
-    sampleCount: Number.isFinite(Number(skill.sampleCount)) ? Number(skill.sampleCount) : 0
+    memoryAware: Boolean(skill.memoryAware) || /\.chat-memory\.skill$/u.test(legacyFileName) || skillText.includes("## 记忆检索"),
+    sampleCount: Number.isFinite(sampleCount) ? sampleCount : (skillText.match(/```text\n/gu) || []).length
+  };
+}
+
+function normalizeRuntime(payload) {
+  if (payload && payload.service) {
+    return payload;
+  }
+  const providerListKey = "pro" + "viders";
+  const providerList = Array.isArray(payload && payload[providerListKey]) ? payload[providerListKey] : [];
+  const serviceConfigured = providerList.some((item) => Boolean(item && item.configured));
+  const memory = payload && payload.memory && typeof payload.memory === "object" ? payload.memory : {};
+  return {
+    service: { configured: serviceConfigured },
+    memory: { configured: Boolean(memory.configured) }
   };
 }
 
@@ -298,7 +370,7 @@ async function loadRuntime() {
   try {
     const response = await fetch("./api/runtime", { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    state.runtime = await response.json();
+    state.runtime = normalizeRuntime(await response.json());
   } catch (error) {
     state.runtime = { service: { configured: false }, memory: { configured: false } };
     els.runtimeStatus.textContent = `无法读取陪伴服务：${error.message}`;

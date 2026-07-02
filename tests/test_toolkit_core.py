@@ -1,3 +1,5 @@
+import base64
+from email.message import Message
 import json
 from pathlib import Path
 import re
@@ -7,6 +9,7 @@ from types import ModuleType
 import unittest
 from unittest.mock import patch
 
+import requests
 import wechat_skill_distill.web_server as web_server_module
 from wechat_skill_distill.cli import build_parser
 from wechat_skill_distill.evaluation import collect_skill_paths, evaluate_skills
@@ -398,6 +401,42 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertEqual(public[0]["sampleCount"], 1)
         self.assertEqual(resolved["persona"], {"name": "Participant A", "userId": "user-a"})
         self.assertNotIn("user-a", json.dumps(public, ensure_ascii=False))
+
+    def test_chat_ui_can_preload_skill_assets_from_env_base64(self) -> None:
+        text = (
+            '---\nname: chat-user-user-a\nuser_id: "user-a"\ndisplay_name: "Participant A"\n---\n'
+            "# Participant A Chat Skill\n\n## 记忆检索\n\n## 真实样本\n\n```text\nhello\n```\n"
+        )
+        encoded = base64.b64encode(text.encode("utf-8")).decode("utf-8")
+
+        assets = load_skill_assets(
+            include_env=True,
+            env={
+                "WSD_SKILL_1_TEXT_BASE64": encoded,
+                "WSD_SKILL_1_FILE_NAME": "Participant A.chat-memory.skill",
+                "WSD_SKILL_1_DISPLAY_NAME": "Configured Cloud Person",
+            },
+        )
+        public = public_skill_assets(assets)
+        resolved = resolve_preloaded_skill_payload({"skill_id": "env-skill-1"}, assets)
+
+        self.assertEqual(public[0]["id"], "env-skill-1")
+        self.assertEqual(public[0]["name"], "Configured Cloud Person")
+        self.assertEqual(resolved["persona"], {"name": "Participant A", "userId": "user-a"})
+        self.assertIn("Participant A Chat Skill", assets[0]["text"])
+
+    def test_chat_api_can_require_access_token(self) -> None:
+        handler = object.__new__(web_server_module.ChatUIHandler)
+        headers = Message()
+        headers["Authorization"] = "Bearer expected-token"
+        handler.headers = headers
+
+        with patch.dict(web_server_module.os.environ, {"WSD_CHAT_AUTH_TOKEN": "expected-token"}):
+            self.assertTrue(handler._chat_authorized())
+
+        headers.replace_header("Authorization", "Bearer wrong-token")
+        with patch.dict(web_server_module.os.environ, {"WSD_CHAT_AUTH_TOKEN": "expected-token"}):
+            self.assertFalse(handler._chat_authorized())
 
     def test_chat_ui_cli_accepts_display_name_per_skill(self) -> None:
         parser = build_parser()
@@ -1476,6 +1515,24 @@ class ToolkitCoreTest(unittest.TestCase):
         self.assertEqual(kwargs["headers"]["Authorization"], "Bearer secret")
         self.assertEqual(kwargs["json"]["model"], "deepseek-v4-flash")
         self.assertEqual(kwargs["json"]["messages"][-1]["content"], "周末要不要出去？")
+
+    def test_model_transport_errors_are_public_call_errors(self) -> None:
+        with patch("wechat_skill_distill.model_client.requests.post", side_effect=requests.ConnectionError("dns failed")):
+            with self.assertRaises(ModelCallError) as context:
+                generate_chat_reply(
+                    {
+                        "message": "你好",
+                        "skill": "## 说话风格画像\n- 常见表达：可以。",
+                        "persona": {"name": "Participant A", "userId": "user-a"},
+                    },
+                    env={
+                        "WSD_OPENAI_API_KEY": "secret",
+                        "WSD_OPENAI_MODEL": "deepseek-v4-flash",
+                        "WSD_OPENAI_BASE_URL": "https://oneapi.example.test/v1",
+                    },
+                )
+
+        self.assertIn("model service request failed", str(context.exception))
 
     def test_chat_model_override_is_server_side_opt_in(self) -> None:
         payload = {

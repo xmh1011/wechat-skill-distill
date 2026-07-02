@@ -26,6 +26,7 @@
 3. [配置指南](docs/CONFIGURATION.md)：解释 `config.local.json`、`.env`、模型和记忆后端。
 4. [用户示例](docs/USER_EXAMPLES.md)：按“只要风格”“本地记忆试聊”“云记忆陪伴”等目标选择命令。
 5. [完整案例教程](docs/CASE_TUTORIAL.md)：用 `examples/chat.json` 跑通完整流程。
+6. [云部署指南](docs/DEPLOYMENT.md)：把后端部署到 Koyeb，把静态前端部署到 Tiiny Host。
 
 ## 10 分钟跑通示例
 
@@ -152,6 +153,12 @@ JSONL_MEMORY_PATH=/tmp/wsd-demo/memory.jsonl
 | 启动网页试聊 | `wechat-skill-distill chat-ui --env-file .env --skill generated-chat-skills/朋友.chat-memory.skill` |
 | 评估 skill | `wechat-skill-distill evaluate-skills --skills generated-skills generated-chat-skills --input data/my-chat.json --config config.local.json` |
 
+## 云部署
+
+Tiiny Host 只能托管静态前端；完整聊天需要一个后端服务承载 `/api/runtime`、`/api/skills` 和 `/api/chat`。推荐用 Koyeb 免费 Web Service 部署仓库里的 `Dockerfile`，再把 Tiiny 前端通过 `?apiBase=https://your-app.koyeb.app` 指向后端。
+
+云端不要提交私有 `*.chat-memory.skill` 或 `.env`。可以把 skill 内容 base64 后配置为 `WSD_SKILL_1_TEXT_BASE64`，把模型、记忆、CORS 和 `WSD_CHAT_AUTH_TOKEN` 访问令牌放在云平台环境变量中。详细步骤见 [云部署指南](docs/DEPLOYMENT.md)。
+
 ## 产物区别
 
 | 命令 | 输出 | 是否包含记忆规则 | 用途 |
@@ -185,5 +192,6 @@ node --check wechat_skill_distill/web/app.js
 - [docs/USER_EXAMPLES.md](docs/USER_EXAMPLES.md)：按用户目标组织的使用示例。
 - [docs/CASE_TUTORIAL.md](docs/CASE_TUTORIAL.md)：完整案例教程。
 - [docs/WEFLOW_EXPORT.md](docs/WEFLOW_EXPORT.md)：WeFlow JSON 导出教程。
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)：Koyeb 后端 + Tiiny 静态前端部署。
 - [PRD.md](PRD.md)：产品范围、场景和路线图。
 - [docs/research/open-source-review.md](docs/research/open-source-review.md)：开源项目调研记录。

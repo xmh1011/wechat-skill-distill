@@ -30,6 +30,19 @@ const els = {
 };
 
 const pageConfig = new URLSearchParams(window.location.search);
+const runtimeConfig = window.WSD_CONFIG || {};
+const configuredApiBase = String(pageConfig.get("apiBase") || runtimeConfig.apiBase || "")
+  .trim()
+  .replace(/\/+$/u, "");
+const configuredAccessToken = String(pageConfig.get("accessToken") || runtimeConfig.accessToken || "").trim();
+
+function apiUrl(path) {
+  return configuredApiBase ? `${configuredApiBase}${path}` : `.${path}`;
+}
+
+function authHeaders() {
+  return configuredAccessToken ? { Authorization: `Bearer ${configuredAccessToken}` } : {};
+}
 
 function configuredDisplayName(personaId, index, total) {
   const scoped =
@@ -345,9 +358,9 @@ async function sendMessage(input) {
   state.busy = true;
   setComposerEnabled(false);
   try {
-    const response = await fetch("./api/chat", {
+    const response = await fetch(apiUrl("/api/chat"), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({
         message: input,
         skill_id: personaId,
@@ -386,7 +399,7 @@ function setComposerEnabled(enabled) {
 
 async function loadRuntime() {
   try {
-    const response = await fetch("./api/runtime", { cache: "no-store" });
+    const response = await fetch(apiUrl("/api/runtime"), { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     state.runtime = normalizeRuntime(await response.json());
   } catch (error) {
@@ -398,7 +411,7 @@ async function loadRuntime() {
 
 async function loadServerSkills() {
   try {
-    const response = await fetch("./api/skills", { cache: "no-store" });
+    const response = await fetch(apiUrl("/api/skills"), { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
     const skills = Array.isArray(payload.skills) ? payload.skills : [];

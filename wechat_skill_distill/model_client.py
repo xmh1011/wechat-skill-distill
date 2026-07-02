@@ -300,7 +300,7 @@ def _call_text_model(
         }
         if temperature is not None:
             body["temperature"] = temperature
-        response = requests.post(
+        response = _post_model_json(
             f"{config.base_url.rstrip('/')}/chat/completions",
             headers={"Authorization": f"Bearer {config.api_key}", "Content-Type": "application/json"},
             json=body,
@@ -321,7 +321,7 @@ def _call_text_model(
         }
         if temperature is not None:
             body["temperature"] = temperature
-        response = requests.post(
+        response = _post_model_json(
             f"{config.base_url.rstrip('/')}/v1/messages",
             headers={
                 "x-api-key": config.api_key,
@@ -341,7 +341,7 @@ def _call_text_model(
     generation_config: dict[str, Any] = {"maxOutputTokens": max_tokens}
     if temperature is not None:
         generation_config["temperature"] = temperature
-    response = requests.post(
+    response = _post_model_json(
         f"{config.base_url.rstrip('/')}/{model_name}:generateContent",
         headers={"x-goog-api-key": config.api_key, "Content-Type": "application/json"},
         json={
@@ -401,7 +401,7 @@ def _call_openai(config: ProviderConfig, payload: Mapping[str, Any], env: Mappin
     max_tokens = _max_tokens(env)
     if max_tokens:
         body["max_tokens"] = max_tokens
-    response = requests.post(
+    response = _post_model_json(
         f"{config.base_url.rstrip('/')}/chat/completions",
         headers={"Authorization": f"Bearer {config.api_key}", "Content-Type": "application/json"},
         json=body,
@@ -422,7 +422,7 @@ def _call_anthropic(config: ProviderConfig, payload: Mapping[str, Any], env: Map
         "system": build_companion_prompt(payload),
         "messages": [*_clean_history(payload.get("history")), {"role": "user", "content": _latest_user_message(payload)}],
     }
-    response = requests.post(
+    response = _post_model_json(
         f"{config.base_url.rstrip('/')}/v1/messages",
         headers={
             "x-api-key": config.api_key,
@@ -455,7 +455,7 @@ def _call_gemini(config: ProviderConfig, payload: Mapping[str, Any], env: Mappin
     if temperature is not None:
         body["generationConfig"]["temperature"] = temperature
     model_name = config.model if config.model.startswith("models/") else f"models/{config.model}"
-    response = requests.post(
+    response = _post_model_json(
         f"{config.base_url.rstrip('/')}/{model_name}:generateContent",
         headers={"x-goog-api-key": config.api_key, "Content-Type": "application/json"},
         json=body,
@@ -468,6 +468,13 @@ def _call_gemini(config: ProviderConfig, payload: Mapping[str, Any], env: Mappin
     except (KeyError, IndexError, TypeError) as exc:
         raise ModelCallError("Gemini response did not include candidates[0].content.parts text") from exc
     return text, raw
+
+
+def _post_model_json(url: str, *, headers: Mapping[str, str], json: Mapping[str, Any], timeout: int) -> requests.Response:
+    try:
+        return requests.post(url, headers=dict(headers), json=dict(json), timeout=timeout)
+    except requests.RequestException as exc:
+        raise ModelCallError(f"model service request failed: {exc}") from exc
 
 
 def _response_json(response: requests.Response) -> Mapping[str, Any]:

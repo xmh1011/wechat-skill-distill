@@ -283,7 +283,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     chat_ui = sub.add_parser("chat-ui", help="serve the local chat simulator UI")
     chat_ui.add_argument("--host", default="127.0.0.1")
-    chat_ui.add_argument("--port", default=8765, type=int)
+    chat_ui.add_argument("--port", default=int(os.getenv("PORT", "8765")), type=int)
     chat_ui.add_argument("--env-file", type=Path, default=Path(".env"), help="load model provider secrets from a local env file")
     chat_ui.add_argument("--skill", dest="skill_paths", action="append", type=Path, default=[], help="preload a .skill or .chat-memory.skill file; repeat for multiple personas")
     chat_ui.add_argument("--display-name", dest="display_names", action="append", default=[], help="override the UI display name for the matching --skill; repeat in the same order")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from functools import partial
 import json
 import os
@@ -15,16 +16,69 @@ from .model_client import ModelCallError, ModelConfigError, generate_chat_reply,
 from .skill_meta import parse_skill_meta
 
 
+def _csv(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 def web_root() -> Path:
     return Path(str(files("wechat_skill_distill").joinpath("web")))
 
 
-def load_skill_assets(skill_paths: list[Path] | None = None, *, display_names: list[str] | None = None) -> list[dict[str, str]]:
+def _decode_base64_text(value: str) -> str:
+    return base64.b64decode(value.encode("utf-8")).decode("utf-8")
+
+
+def _skill_assets_from_env(env: Mapping[str, str] | None = None) -> list[dict[str, str]]:
+    current_env = env or os.environ
+    assets: list[dict[str, str]] = []
+    for index in range(1, 21):
+        prefix = f"WSD_SKILL_{index}_"
+        text = current_env.get(prefix + "TEXT", "")
+        encoded_text = current_env.get(prefix + "TEXT_BASE64", "")
+        if encoded_text:
+            try:
+                text = _decode_base64_text(encoded_text)
+            except (UnicodeDecodeError, ValueError) as exc:
+                raise RuntimeError(f"{prefix}TEXT_BASE64 must be valid UTF-8 base64") from exc
+        if not text:
+            continue
+        assets.append(
+            {
+                "id": current_env.get(prefix + "ID", f"env-skill-{index}"),
+                "file_name": current_env.get(prefix + "FILE_NAME", f"env-skill-{index}.skill"),
+                "display_name": current_env.get(prefix + "DISPLAY_NAME", ""),
+                "text": text,
+            }
+        )
+    return assets
+
+
+def _skill_paths_from_env(env: Mapping[str, str] | None = None) -> list[Path]:
+    current_env = env or os.environ
+    return [Path(item) for item in _csv(current_env.get("WSD_SKILL_PATHS", ""))]
+
+
+def _display_names_from_env(env: Mapping[str, str] | None = None) -> list[str]:
+    current_env = env or os.environ
+    return _csv(current_env.get("WSD_DISPLAY_NAMES", ""))
+
+
+def load_skill_assets(
+    skill_paths: list[Path] | None = None,
+    *,
+    display_names: list[str] | None = None,
+    include_env: bool = False,
+    env: Mapping[str, str] | None = None,
+) -> list[dict[str, str]]:
     configured_display_names = display_names or []
-    if skill_paths and len(configured_display_names) > len(skill_paths):
+    configured_skill_paths = list(skill_paths or [])
+    if include_env:
+        configured_skill_paths.extend(_skill_paths_from_env(env))
+        configured_display_names = [*configured_display_names, *_display_names_from_env(env)]
+    if configured_skill_paths and len(configured_display_names) > len(configured_skill_paths):
         raise RuntimeError("--display-name cannot be provided more times than --skill")
     assets = []
-    for index, path in enumerate(skill_paths or [], start=1):
+    for index, path in enumerate(configured_skill_paths, start=1):
         if not path.exists():
             raise RuntimeError(f"skill file not found: {path}")
         if not path.is_file():
@@ -38,6 +92,8 @@ def load_skill_assets(skill_paths: list[Path] | None = None, *, display_names: l
                 "text": path.read_text(encoding="utf-8"),
             }
         )
+    if include_env:
+        assets.extend(_skill_assets_from_env(env))
     return assets
 
 
@@ -185,6 +241,24 @@ def build_enriched_chat_payload(payload: dict[str, Any], server_hits: list[dict[
 class ChatUIHandler(SimpleHTTPRequestHandler):
     preloaded_skills: list[dict[str, str]] = []
 
+    def _cors_origin(self) -> str:
+        request_origin = self.headers.get("Origin", "")
+        configured = _csv(os.environ.get("WSD_CORS_ORIGINS", ""))
+        if "*" in configured:
+            return "*"
+        if request_origin and request_origin in configured:
+            return request_origin
+        return ""
+
+    def end_headers(self) -> None:
+        origin = self._cors_origin()
+        if origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        super().end_headers()
+
     def _write_json(self, status: int, payload: dict[str, Any]) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
@@ -193,6 +267,20 @@ class ChatUIHandler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
+
+    def _chat_authorized(self) -> bool:
+        expected = os.environ.get("WSD_CHAT_AUTH_TOKEN", "").strip()
+        if not expected:
+            return True
+        authorization = self.headers.get("Authorization", "").strip()
+        if authorization.lower().startswith("bearer "):
+            return authorization[7:].strip() == expected
+        return self.headers.get("X-WSD-Access-Token", "").strip() == expected
+
+    def do_OPTIONS(self) -> None:
+        self.send_response(204)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def do_GET(self) -> None:
         path = urlparse(self.path).path
@@ -208,6 +296,9 @@ class ChatUIHandler(SimpleHTTPRequestHandler):
         path = urlparse(self.path).path
         if path != "/api/chat":
             self._write_json(404, {"error": "not found"})
+            return
+        if not self._chat_authorized():
+            self._write_json(401, {"error": "未授权访问。"})
             return
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -242,12 +333,20 @@ class ChatUIHandler(SimpleHTTPRequestHandler):
         self._write_json(200, public_reply)
 
 
-def serve_chat_ui(host: str, port: int, *, env_file: Path | None = None, skill_paths: list[Path] | None = None, display_names: list[str] | None = None) -> None:
+def serve_chat_ui(
+    host: str,
+    port: int,
+    *,
+    env_file: Path | None = None,
+    skill_paths: list[Path] | None = None,
+    display_names: list[str] | None = None,
+    include_env_skills: bool = True,
+) -> None:
     load_env_file(env_file)
     root = web_root()
     if not (root / "index.html").exists():
         raise RuntimeError(f"chat UI assets not found: {root}")
-    preloaded_skills = load_skill_assets(skill_paths, display_names=display_names)
+    preloaded_skills = load_skill_assets(skill_paths, display_names=display_names, include_env=include_env_skills)
     handler_class = type("ConfiguredChatUIHandler", (ChatUIHandler,), {"preloaded_skills": preloaded_skills})
     handler = partial(handler_class, directory=str(root))
     server = ThreadingHTTPServer((host, port), handler)

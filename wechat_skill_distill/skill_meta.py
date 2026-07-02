@@ -69,11 +69,15 @@ def skill_sample_count(text: str) -> int:
     return len(re.findall(r"```text\n[\s\S]*?\n```", text))
 
 
+def skill_memory_aware(text: str) -> bool:
+    return any(marker in text for marker in ("## 记忆检索", "## Hindsight", "Hindsight 检索", "记忆命中", "需要检索 Hindsight"))
+
+
 def parse_skill_meta(text: str, *, fallback_name: str = "") -> SkillMeta:
     return SkillMeta(
         name=frontmatter_value(text, "display_name") or skill_title_name(text, fallback_name) or fallback_name,
         user_id=skill_user_id(text),
-        memory_aware="## 记忆检索" in text,
+        memory_aware=skill_memory_aware(text),
         phrases=skill_phrases(text),
         sample_count=skill_sample_count(text),
     )

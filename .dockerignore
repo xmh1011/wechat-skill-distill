@@ -1,0 +1,16 @@
+.git
+.venv
+.env
+.idea
+__pycache__/
+*.pyc
+*.egg-info/
+.DS_Store
+data/
+exports/
+generated-skills/
+generated-chat-skills/
+logs/
+logs*/
+payloads/
+runs/

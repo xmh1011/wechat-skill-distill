@@ -1,4 +1,4 @@
-# 云部署指南：Koyeb 后端 + Tiiny 静态前端
+# 云部署指南：Hugging Face Spaces 后端 + Tiiny 静态前端
 
 `wechat-skill-distill` 的聊天网页由两部分组成：
 
@@ -9,14 +9,14 @@ Tiiny Host 只能放静态前端。完整聊天需要把后端部署到支持 Py
 
 ## 方案选择
 
-推荐先用 Koyeb：
+推荐先用 Hugging Face Spaces：
 
-- 有免费 Web Service，可跑 Docker/Python 后端。
+- 免费 CPU Basic Space 可跑 Docker/Python 后端。
 - 自动提供 HTTPS 域名。
 - 支持环境变量和 secrets。
-- 空闲后会休眠，第一次请求可能较慢，适合个人试用和演示。
+- Space 长时间不用会休眠，第一次请求可能较慢，适合个人试用和演示。
 
-也可以用 Render、Railway、Fly.io、Cloud Run、VPS 等，只要能运行 Docker 或 Python 长驻服务，并支持 HTTPS 和环境变量。
+Koyeb 当前可能要求绑定信用卡并进入 Pro plan，不适合作为“完全免费、不绑卡”的首选。也可以用 Render、Railway、Fly.io、Cloud Run、VPS 等，只要能运行 Docker 或 Python 长驻服务，并支持 HTTPS 和环境变量。
 
 ## 1. 准备后端环境变量
 
@@ -43,7 +43,7 @@ WSD_HINDSIGHT_TYPES=world,observation
 WSD_HINDSIGHT_MAX_TOKENS=3200
 ```
 
-如果前端在 Tiiny，后端在 Koyeb，必须配置 CORS：
+如果前端在 Tiiny，后端在 Hugging Face Spaces，必须配置 CORS：
 
 ```bash
 WSD_CORS_ORIGINS=https://your-site.tiiny.site
@@ -105,24 +105,24 @@ wechat-skill-distill chat-ui \
   --skill generated-chat-skills/朋友.chat-memory.skill
 ```
 
-## 3. 部署到 Koyeb
+## 3. 部署到 Hugging Face Spaces
 
-仓库已经包含 `Dockerfile`，Koyeb 可以直接从 GitHub 构建。
+仓库已经包含 `Dockerfile`，默认监听 Hugging Face Spaces 的 `7860` 端口。
 
 基本步骤：
 
-1. 进入 Koyeb 控制台并创建 Web Service。
-2. 选择 GitHub 仓库 `wechat-skill-distill`。
-3. 选择 Dockerfile 构建。
-4. Service port 使用 `8000`。
-5. 添加上面的模型、记忆、CORS 和 skill 环境变量。
-6. 部署完成后得到类似 `https://your-app.koyeb.app` 的后端地址。
+1. 登录 Hugging Face，创建一个 Space。
+2. SDK 选择 `Docker`。
+3. Hardware 选择免费 `CPU basic`。
+4. 把本仓库代码推送到这个 Space 仓库，或在 Space 里导入 GitHub 仓库。
+5. 在 Space Settings 的 Variables and secrets 中添加上面的模型、记忆、CORS、访问令牌和 skill 环境变量。
+6. 部署完成后得到类似 `https://your-user-your-space.hf.space` 的后端地址。
 
 后端验证：
 
 ```bash
-curl https://your-app.koyeb.app/api/runtime
-curl https://your-app.koyeb.app/api/skills
+curl https://your-user-your-space.hf.space/api/runtime
+curl https://your-user-your-space.hf.space/api/skills
 ```
 
 期望结果：
@@ -145,13 +145,13 @@ zip -r ../../wechat-skill-distill-web.zip index.html app.js styles.css
 访问时把后端地址放到 `apiBase`：
 
 ```text
-https://your-site.tiiny.site/?apiBase=https%3A%2F%2Fyour-app.koyeb.app
+https://your-site.tiiny.site/?apiBase=https%3A%2F%2Fyour-user-your-space.hf.space
 ```
 
 如果后端设置了 `WSD_CHAT_AUTH_TOKEN`，同时带上 `accessToken`：
 
 ```text
-https://your-site.tiiny.site/?apiBase=https%3A%2F%2Fyour-app.koyeb.app&accessToken=<你的访问令牌>
+https://your-site.tiiny.site/?apiBase=https%3A%2F%2Fyour-user-your-space.hf.space&accessToken=<你的访问令牌>
 ```
 
 如果你希望不用 query 参数，可以把 Tiiny 上的 `app.js` 前增加一个小配置文件或内联配置：
@@ -159,7 +159,7 @@ https://your-site.tiiny.site/?apiBase=https%3A%2F%2Fyour-app.koyeb.app&accessTok
 ```html
 <script>
   window.WSD_CONFIG = {
-    apiBase: "https://your-app.koyeb.app",
+    apiBase: "https://your-user-your-space.hf.space",
     accessToken: "<你的访问令牌>"
   };
 </script>

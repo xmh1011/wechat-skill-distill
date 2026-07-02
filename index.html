@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>智能陪伴</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">伴</span>
+          <div>
+            <h1 id="appTitle">智能陪伴</h1>
+            <p id="runtimeStatus">正在连接陪伴服务</p>
+          </div>
+        </div>
+        <div class="top-actions">
+          <button id="clearChat" class="secondary" type="button" title="清空对话">
+            <span aria-hidden="true">⌫</span>
+            清空
+          </button>
+          <button id="exportChat" class="primary" type="button" title="导出对话">
+            <span aria-hidden="true">⇩</span>
+            导出
+          </button>
+        </div>
+      </header>
+
+      <aside class="sidebar">
+        <section class="panel">
+          <h2>对话对象</h2>
+          <select id="personaSelect" aria-label="对话对象"></select>
+          <dl class="facts">
+            <div>
+              <dt>陪伴类型</dt>
+              <dd id="modeValue">未加载</dd>
+            </div>
+            <div>
+              <dt>样本</dt>
+              <dd id="sampleCountValue">0</dd>
+            </div>
+            <div>
+              <dt>记忆</dt>
+              <dd id="memoryCountValue">0 条</dd>
+            </div>
+          </dl>
+        </section>
+
+      </aside>
+
+      <main class="chat-shell">
+        <div class="conversation-meta">
+          <div>
+            <strong id="conversationTitle">正在读取陪伴对象</strong>
+            <span id="conversationSub">会按 skill 风格生成回复</span>
+            <span id="typingStatus" class="typing-status" hidden>对方正在输入中...</span>
+          </div>
+          <div id="statePills" class="state-pills"></div>
+        </div>
+        <div id="chatLog" class="chat-log" aria-live="polite"></div>
+        <form id="composer" class="composer">
+          <textarea id="messageInput" rows="2" placeholder="输入一条消息，Enter 发送，Shift+Enter 换行" aria-label="Message"></textarea>
+          <button class="primary icon-only" type="submit" title="Send">
+            <span aria-hidden="true">↑</span>
+          </button>
+        </form>
+      </main>
+
+      <aside class="inspector">
+        <section class="panel">
+          <h2>风格线索</h2>
+          <div id="styleTokens" class="tokens"></div>
+        </section>
+        <section class="panel grow">
+          <h2>陪伴状态</h2>
+          <div id="companionStatus" class="status-list"></div>
+        </section>
+      </aside>
+    </div>
+
+    <template id="messageTemplate">
+      <article class="message">
+        <div class="bubble"></div>
+      </article>
+    </template>
+
+    <script src="./app.js?v=20260618-display-name-config"></script>
+  </body>
+</html>

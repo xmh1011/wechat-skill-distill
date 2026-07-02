@@ -29,7 +29,19 @@ const els = {
   messageTemplate: document.getElementById("messageTemplate")
 };
 
-const pageConfig = new URLSearchParams(window.location.search);
+function mergedPageConfig() {
+  const params = new URLSearchParams(window.location.search);
+  const hashText = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash;
+  const hashParams = new URLSearchParams(hashText);
+  for (const [key, value] of hashParams.entries()) {
+    if (!params.has(key)) {
+      params.set(key, value);
+    }
+  }
+  return params;
+}
+
+const pageConfig = mergedPageConfig();
 const runtimeConfig = window.WSD_CONFIG || {};
 const configuredApiBase = String(pageConfig.get("apiBase") || runtimeConfig.apiBase || "")
   .trim()

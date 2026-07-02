@@ -142,16 +142,16 @@ zip -r ../../wechat-skill-distill-web.zip index.html app.js styles.css
 
 上传 `wechat-skill-distill-web.zip` 到 Tiiny Host。
 
-访问时把后端地址放到 `apiBase`：
+访问时把后端地址放到 `apiBase`。推荐使用 URL hash，这样访问令牌不会作为 query string 发送到静态托管服务器：
 
 ```text
-https://your-site.tiiny.site/?apiBase=https%3A%2F%2Fyour-user-your-space.hf.space
+https://your-site.tiiny.site/#apiBase=https%3A%2F%2Fyour-user-your-space.hf.space
 ```
 
 如果后端设置了 `WSD_CHAT_AUTH_TOKEN`，同时带上 `accessToken`：
 
 ```text
-https://your-site.tiiny.site/?apiBase=https%3A%2F%2Fyour-user-your-space.hf.space&accessToken=<你的访问令牌>
+https://your-site.tiiny.site/#apiBase=https%3A%2F%2Fyour-user-your-space.hf.space&accessToken=<你的访问令牌>
 ```
 
 如果你希望不用 query 参数，可以把 Tiiny 上的 `app.js` 前增加一个小配置文件或内联配置：

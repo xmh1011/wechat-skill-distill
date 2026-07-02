@@ -1,4 +1,5 @@
 .env
+.hf-deploy-info
 .venv/
 .idea/
 __pycache__/
